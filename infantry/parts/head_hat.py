@@ -120,11 +120,11 @@ def _add_ring(verts, pts):
 # ------------------------------------------------------------------ head surface
 # h = (z - centre) / half height ; factors of HEAD_RADII: half width, front depth, back depth
 _HEAD_KEYS = [
-    (-1.10, 0.40, 0.66, 0.40),
-    (-0.92, 0.56, 0.81, 0.50),   # chin
-    (-0.67, 0.76, 0.93, 0.66),   # jaw
-    (-0.33, 0.925, 0.985, 0.88),  # mouth / nape
-    (0.00, 0.995, 1.00, 0.97),   # cheek bones
+    (-1.10, 0.40, 0.66, 0.44),
+    (-0.92, 0.56, 0.81, 0.56),   # chin
+    (-0.67, 0.77, 0.93, 0.76),   # jaw
+    (-0.33, 0.945, 0.985, 0.945),  # mouth / nape
+    (0.00, 1.00, 1.00, 0.995),   # cheek bones
     (0.33, 1.01, 0.98, 1.00),    # widest part of the cranium
     (0.625, 0.965, 0.925, 0.96),  # brow (cap ring)
     (0.85, 0.78, 0.74, 0.78),
@@ -241,7 +241,7 @@ def _brim_r(t):
 def brim_z(t, a):
     """Top surface of the brim.  t: 0 at the crown, 1 at the rim.  Gentle saddle: droops at
     front / back, lifts at the sides, plus a slight downward slope and forward tilt."""
-    return BRIM_Z - 0.028 * t ** 1.2 + 0.009 * t ** 1.5 * math.cos(2 * a) + 0.007 * t * math.sin(a)
+    return BRIM_Z - 0.033 * t ** 1.2 + 0.009 * t ** 1.5 * math.cos(2 * a) + 0.007 * t * math.sin(a)
 
 
 def crown_r(z):
@@ -444,7 +444,9 @@ def mask_surf(X, v):
     zc = MASK_Z_TOP + (zbot - MASK_Z_TOP) * _VC
     y = _Y_TOP + _K_UP * (MASK_Z_TOP - max(z, zc)) + _K_LOW * max(zc - z, 0.0)
     s = 1.0 - 0.08 * v ** 1.6
-    return V((X * s, y + _mask_dep(X) * (1.0 - 0.30 * v), z))
+    # cheeks wrap less towards the bottom so the rear edge runs forward-down to the chin (side view)
+    q = 1.0 - 0.10 * v / _VC if v <= _VC else 0.90 - 0.34 * (v - _VC) / (1 - _VC)
+    return V((X * s, y + _mask_dep(X) * q, z))
 
 
 def _mask_normal_in(X, v):

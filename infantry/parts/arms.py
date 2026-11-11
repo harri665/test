@@ -297,7 +297,7 @@ T_KEYS = [(0.0, 0.0225), (0.3, 0.0180), (0.7, 0.0145), (1.0, 0.0112)]
 P_KEYS = [(0.0, 2.3), (0.3, 3.0), (1.0, 3.6)]
 FINGER_LEN = [0.080, 0.088, 0.082, 0.064]
 FINGER_FAN = [4.0, 1.0, -2.5, -6.5]                   # degrees, + towards the thumb
-FINGER_BEND = [(12, 22, 12), (15, 26, 14), (19, 30, 16), (23, 33, 18)]   # MCP, PIP, DIP curl (deg)
+FINGER_BEND = [(9, 20, 12), (12, 24, 13), (15, 27, 15), (18, 30, 16)]   # MCP, PIP, DIP curl (deg)
 FINGER_RV = [0.0098, 0.0100, 0.0097, 0.0088]
 
 
@@ -366,7 +366,10 @@ def digit(P0, dirs, Ls, fu_hint, fv_hint, ru, rv, sep=0.007, e=0.0032, taper=0.1
     n = max(1, round(span / 0.010))
     st += [(L1 + e + span * i / n, 0.97) for i in range(1, n)]
     st += [(L1 + L2 - e, 1.03), (L1 + L2 + e, 1.03)]
-    st += [(L1 + L2 + e + (L3 - e) * 0.36, 1.0), (Ltot - 0.0100, 0.99), (Ltot - 0.0052, 0.90), (Ltot - 0.0018, 0.60)]
+    xa, xb = L1 + L2 + e, Ltot - 0.0100
+    n = max(1, round((xb - xa) / 0.008))
+    st += [(xa + (xb - xa) * i / n, 1.0) for i in range(1, n)]
+    st += [(xb, 0.99), (Ltot - 0.0052, 0.90), (Ltot - 0.0018, 0.60)]
 
     rings = []
     for x, sc in st:
@@ -380,19 +383,8 @@ def digit(P0, dirs, Ls, fu_hint, fv_hint, ru, rv, sep=0.007, e=0.0032, taper=0.1
 
 
 def build_hand():
-    O = S.WRIST
-    d = (S.HAND_TIP - S.WRIST).normalized()
-    b = V((1.0, 0.0, 0.0))
-    b = (b - d * b.dot(d)).normalized()          # back of the hand faces away from the thigh (+X)
-    w = d.cross(b).normalized()                  # thumb side = character's front (-Y)
-
-    def W(p):
-        return O + w * p.x + b * p.y + d * p.z
-
-    def Wd(p):
-        return w * p.x + b * p.y + d * p.z
-
     verts, faces = [], []
+    mid_tip = [None]
 
     def add(p):
         verts.append(V(p))
@@ -421,21 +413,22 @@ def build_hand():
         grid.append(row)
 
     # thenar mound (ball of the thumb)
-    bump_c, bump_d = V((0.030, -0.014, 0.036)), V((0.55, -0.80, 0.0)).normalized()
-    for r in range(NR + 1):
+    bump_c, bump_d = V((0.028, -0.016, 0.034)), V((0.45, -0.89, 0.0)).normalized()
+    for r in range(1, NR + 1):
         for j in range(NP):
             p = grid[r][j]
-            g = math.exp(-((p - bump_c).length / 0.020) ** 2)
-            if r > 0:
-                grid[r][j] = p + bump_d * (0.007 * g)
+            p = p + bump_d * (0.005 * math.exp(-((p - bump_c).length / 0.022) ** 2))
+            # the web between thumb and index finger is drawn in a little
+            grid[r][j] = p + V((-0.0045, 0.002, 0.0)) * math.exp(-((p - V((0.037, -0.006, 0.058))).length / 0.011) ** 2)
 
-    # thumb root: a 2x2 patch on the thumb edge of the palm becomes the thumb's base ring
+    # thumb root: a 2x2 patch on the palm-side thumb corner of the palm becomes the thumb's base ring
     R1 = 2
-    hole_cells = {(R1, 19), (R1, 0), (R1 + 1, 19), (R1 + 1, 0)}          # (row, col) of removed quads
-    h = [(R1, 1), (R1, 0), (R1, 19), (R1 + 1, 19), (R1 + 2, 19), (R1 + 2, 0), (R1 + 2, 1), (R1 + 1, 1)]
-    th_c = V((0.0400, -0.0075, 0.0365))
-    th_n0 = V((0.80, -0.30, 0.52)).normalized()
-    th_dir = V((0.36, -0.34, 0.87)).normalized()
+    hole_cells = {(R1, 18), (R1, 19), (R1 + 1, 18), (R1 + 1, 19)}        # (row, col) of removed quads
+    hole_vert = (R1 + 1, 19)
+    h = [(R1, 0), (R1, 19), (R1, 18), (R1 + 1, 18), (R1 + 2, 18), (R1 + 2, 19), (R1 + 2, 0), (R1 + 1, 0)]
+    th_c = V((0.0335, -0.0115, 0.0360))
+    th_n0 = V((0.84, -0.40, 0.36)).normalized()
+    th_dir = V((0.50, -0.20, 0.84)).normalized()
     vhint, uhint = V((0.0, 1.0, 0.0)), V((1.0, 0.0, -1.0))
     fv0 = (vhint - th_n0 * vhint.dot(th_n0)).normalized()
     fu0 = th_n0.cross(fv0).normalized()
@@ -443,12 +436,14 @@ def build_hand():
         fu0 = -fu0
     th_base_cells = [h[0], h[7], h[6], h[5], h[4], h[3], h[2], h[1]]    # RING8 order
     for (r, j), (cx, cy) in zip(th_base_cells, RING8):
-        grid[r][j] = th_c + fu0 * (0.0125 * cx) + fv0 * (0.0118 * cy)
+        tgt = th_c + fu0 * (0.0130 * cx) + fv0 * (0.0122 * cy)
+        grid[r][j] = grid[r][j].lerp(tgt, 0.75)
+    th_c = sum((grid[r][j] for r, j in th_base_cells), V((0.0, 0.0, 0.0))) / 8.0
 
     idx = {}
     for r in range(NR + 1):
         for j in range(NP):
-            if (r, j) == (R1 + 1, 0):
+            if (r, j) == hole_vert:
                 continue                                            # vertex inside the thumb hole
             idx[(r, j)] = add(grid[r][j])
     for r in range(NR):
@@ -494,27 +489,53 @@ def build_hand():
         rings, tip = digit(P0, dirs, (0.36 * L, 0.34 * L, 0.30 * L), fu, fv,
                            FINGER_W[f] / 2 - 0.0012, FINGER_RV[f])
         add_digit(base, rings, tip)
+        if f == 1:
+            mid_tip[0] = tip
 
     # ---------------- thumb
-    d0 = (th_n0 + th_dir).normalized()
-    d2 = (th_dir + V((-0.20, -0.10, 0.04))).normalized()
-    rings, tip = digit(th_c, [d0, th_dir, d2], (0.016, 0.034, 0.030), uhint, vhint, 0.0118, 0.0110, sep=0.006)
+    d0 = (th_n0 * 0.8 + th_dir * 0.2).normalized()
+    d2 = (th_dir + V((-0.24, -0.14, 0.06))).normalized()
+    rings, tip = digit(th_c, [d0, th_dir, d2], (0.020, 0.032, 0.029), uhint, vhint, 0.0118, 0.0110, sep=0.006)
     add_digit([idx[c] for c in th_base_cells], rings, tip)
+
+    # ---------------- frames.  The hand is tipped back at the wrist so that the relaxed (curled)
+    # middle finger still ends close to the spec.WRIST -> spec.HAND_TIP line.
+    O = S.WRIST
+    d0_ = (S.HAND_TIP - S.WRIST).normalized()
+    b0_ = V((1.0, 0.0, 0.0))
+    b0_ = (b0_ - d0_ * b0_.dot(d0_)).normalized()    # back of the hand faces away from the thigh (+X)
+    w = d0_.cross(b0_).normalized()                  # thumb side = character's front (-Y)
+    al = 0.65 * math.atan2(-mid_tip[0].y, mid_tip[0].z)
+    d = d0_ * math.cos(al) + b0_ * math.sin(al)
+    b = b0_ * math.cos(al) - d0_ * math.sin(al)
+
+    def W(p):
+        return O + w * p.x + b * p.y + d * p.z
+
+    def Wd(p):
+        return w * p.x + b * p.y + d * p.z
+
+    bf = V((1.0, 0.0, 0.0))                          # forearm-aligned frame for the cuff
+    bf = (bf - D2 * bf.dot(D2)).normalized()
+    wf = D2.cross(bf).normalized()
+
+    def Wf(p):
+        return O + wf * p.x + bf * p.y + D2 * p.z
 
     hand = lib.mesh_object("Hand_L", [W(p) for p in verts], faces, topo="main", sharp_angle=180)
 
     # ---------------- wrist support loops
     Wd0, Td0, p0 = keyf(0.0, W_KEYS), keyf(0.0, T_KEYS), keyf(0.0, P_KEYS)
     wr_rings = [[W(p) for p in grid[0]]]
-    for s, k in ((0.007, 0.970), (0.003, 0.955), (-0.001, 0.960)):
-        wr_rings.append([W(p) for p in section(s, Wd0 * k, Td0 * k, p0)])
+    for s, k, hw in ((0.007, 0.970, 0.67), (0.003, 0.955, 0.33), (-0.001, 0.960, 0.0)):
+        wr_rings.append([Wf(p).lerp(W(p), hw) for p in section(s, Wd0 * k, Td0 * k, p0)])
     wrist = lib.lofted("Wrist_L", wr_rings, topo="support", sharp_angle=180)
 
     # ---------------- glove cuff (thick, flares up inside the sleeve cuff)
     Wb, Tb = Wd0 * 0.96, Td0 * 0.96
     prof = [(0.000, 0.0008), (0.000, 0.0065), (-0.004, 0.0085), (-0.008, 0.0100), (-0.010, 0.0085),
             (-0.022, 0.0105), (-0.034, 0.0120), (-0.045, 0.0130), (-0.045, 0.0100), (-0.022, 0.0040)]
-    cuff = lib.mesh_object("Glove_cuff_L", *loop_loft([[W(p) for p in section(s, Wb + g, Tb + g * 1.5, 2.3)]
+    cuff = lib.mesh_object("Glove_cuff_L", *loop_loft([[Wf(p) for p in section(s, Wb + g, Tb + g * 1.5, 2.3)]
                                                         for s, g in prof]), topo="main", sharp_angle=60)
 
     # ---------------- rigid bits: knuckle studs + back-of-hand plate

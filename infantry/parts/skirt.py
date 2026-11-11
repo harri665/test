@@ -37,14 +37,14 @@ BACK_FULL = 0.05                    # back half of the hem ellipse is this much 
 FOLD_K = 10                         # fold lobes around the whole skirt (crest at the sides)
 FOLD_AMP = 0.015                    # fold amplitude at the hem
 FRONT_SIDE_A, BACK_SIDE_A = 355.0, 5.0      # side edges of front / back panels (deg)
-FRONT_SIDE_Z, BACK_SIDE_Z = 0.400, 0.385    # hem height at those side edges
+FRONT_SIDE_Z, BACK_SIDE_Z = 0.475, 0.468    # hem height at those side edges
 BACK_TIP_Z = Z_TIP - 0.012                  # back panels hang a little longer
 FRONT_LAP = 0.008                   # front panels cross the centre line by this much when closed
 LAP_LIFT = 0.015                    # left front panel rides this far above the right one
 SIDE_A = 35.0                       # side overlap panel covers -35 .. +35 deg around +X
-SIDE_LIFT = 0.011                   # one layer further out (thickness 0.008 + 2 mm air)
+SIDE_LIFT = 0.013                   # one layer further out (cloth 0.008 + binding 0.004 + air)
 SIDE_TOP_Z = 1.070
-SIDE_TIP_Z, SIDE_EDGE_Z = 0.455, 0.560
+SIDE_TIP_Z, SIDE_EDGE_Z = 0.445, 0.560
 UNDER_OFF, UNDER_TH = 0.018, 0.004
 UNDER_HEM_Z, UNDER_SCALE = 0.360, 0.85
 UNDER_PLEAT = 0.010
@@ -282,13 +282,13 @@ def _front_grid(lifted):
         return _angle_for_x(x, z, True, extra(D(270.0), z) if x < 0.012 else 0.0)
 
     return _panel_grid(NR_MAIN, NC_FRONT, Z_TOP,
-                       lambda v: Z_TIP + (FRONT_SIDE_Z - Z_TIP) * v ** 0.85,
+                       lambda v: Z_TIP + (FRONT_SIDE_Z - Z_TIP) * v ** 1.15,
                        edge0, lambda z: D(FRONT_SIDE_A), extra)
 
 
 def _back_grid():
     return _panel_grid(NR_MAIN, NC_BACK, Z_TOP,
-                       lambda v: BACK_TIP_Z + (BACK_SIDE_Z - BACK_TIP_Z) * v ** 0.85,
+                       lambda v: BACK_TIP_Z + (BACK_SIDE_Z - BACK_TIP_Z) * v ** 1.15,
                        lambda z: _angle_for_x(_back_edge_x(z), z, False),
                        lambda z: D(BACK_SIDE_A), lambda a, z: 0.0)
 
@@ -350,7 +350,8 @@ def outer_radius(a_deg, z):
     side, including the side overlap panel and its binding where it covers that angle."""
     a = D(a_deg) % math.tau
     extra = TH
-    if _angdist(a, 0.0) <= D(SIDE_A) and z <= SIDE_TOP_Z and z >= SIDE_EDGE_Z:
+    v = _angdist(a, 0.0) / D(SIDE_A)
+    if v <= 1.0 and SIDE_TIP_Z + (SIDE_EDGE_Z - SIDE_TIP_Z) * v ** 1.15 <= z <= SIDE_TOP_Z:
         extra = _side_extra(a, z) + TH + TRIM_RISE
     p = surf(a, z, extra)
     return math.hypot(p.x, p.y)
