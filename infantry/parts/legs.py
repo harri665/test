@@ -122,6 +122,8 @@ Z_SPLIT = 0.875                 # last full pelvis ring; the crotch gusset hangs
 BLOUSE_Z0, BLOUSE_Z1, BLOUSE_R = C["trouser_blouse"]
 BOOT_TOP = C["boot_top_z"]
 PELVIS_Z = [1.06, 1.03, 1.00, 0.97, 0.94, 0.908, Z_SPLIT]
+SPLIT_DIP = 0.028               # the split ring sags this much at the centre front / back
+SPLIT_RY = 0.116                # half depth of the split ring (seat)
 
 
 def _thigh_r(z):
@@ -137,12 +139,13 @@ _R562 = _thigh_r(0.562)
 LEG_ROWS = [(z, _thigh_r(z), 0.0) for z in _Z_TH] + [
     (0.535, _lerp(_R562, 0.091, 0.45), 0.0),
     (S.KNEE.z + 0.012, 0.0895, 0.0), (S.KNEE.z, 0.0910, 0.0), (S.KNEE.z - 0.012, 0.0925, 0.0),   # knee loops
-    (0.462, 0.0950, 0.0), (0.434, 0.0970, 0.0), (0.406, BLOUSE_R - 0.0075, 0.0), (0.382, BLOUSE_R - 0.0075, 0.15),
-    (0.361, 0.0965, 0.4), (0.343, 0.0935, 0.8), (0.329, 0.0865, 1.0),                 # roll hangs over the boot top
-    (0.331, 0.0790, 0.7), (0.3398, 0.0748, 0.0),                                      # underside, back up to the cuff
+    (0.462, 0.0945, 0.0), (0.434, 0.0960, 0.0), (0.406, BLOUSE_R - 0.0085, 0.0), (0.384, BLOUSE_R - 0.0085, 0.15),
+    (0.365, 0.0960, 0.4), (0.349, 0.0940, 0.7), (0.336, 0.0895, 0.9), (0.3295, 0.0830, 1.0),   # roll over the boot top
+    (0.3315, 0.0775, 0.6), (0.3398, 0.0748, 0.0),                                     # underside, back up to the cuff
     (0.3428, 0.0680, 0.0), (0.3388, 0.0600, 0.0), (0.326, 0.0587, 0.0), (0.308, 0.0580, 0.0),   # tuck into the boot
 ]
 _DIP = {0: 0.030, 1: 0.018, 2: 0.008}          # leg rings just under the crotch tilt down on the inside
+_SEAT = {0: 0.62, 1: 0.32, 2: 0.12}            # ... and keep some of the seat depth (front / back)
 
 
 def _fold(th, z, r, side):
@@ -151,12 +154,12 @@ def _fold(th, z, r, side):
     wt = _sstep((r - 0.070) / 0.020) if z < 0.40 else 1.0   # none on the tuck
     blouse = (0.0042 * math.sin(2 * th + 0.9 + 0.7 * side + 14.0 * z)
               + 0.0030 * math.sin(5 * th + 1.1 * side - 34.0 * z)
-              + 0.0024 * math.sin(TAU * (z - 0.36) / 0.085 + 1.5 * math.sin(th + side)))
+              + 0.0034 * math.sin(TAU * (z - 0.36) / 0.085 + 1.5 * math.sin(th + side)))
     thigh = 0.0022 * math.sin(3 * th + 21.0 * z + side)
     return wt * (wb * blouse + (1 - wb) * thigh)
 
 
-def trouser_pt(z, r, th, side=1, dr=0.0, dip=0.0, droop=0.0):
+def trouser_pt(z, r, th, side=1, dr=0.0, dip=0.0, droop=0.0, seat=0.0):
     """Point on the LEFT trouser leg at height z / base radius r / angle th (0 = outer +X, 90 = back)."""
     cx, cy = leg_c(z)
     wb = _sstep((0.56 - z) / 0.12) * (_sstep((r - 0.070) / 0.025) if z < 0.40 else 1.0)
@@ -166,7 +169,7 @@ def trouser_pt(z, r, th, side=1, dr=0.0, dip=0.0, droop=0.0):
     ex, rx = 0.5 * (x_out + x_in), 0.5 * (x_out - x_in)
     k = 1.0 + (_fold(th, z, r, side) + dr) / r
     x = max(ex + rx * math.cos(th) * k, GAP - 0.004)
-    y = cy + r * math.sin(th) * k
+    y = cy + (r + seat * (SPLIT_RY - _thigh_r(Z_SPLIT))) * math.sin(th) * k
     # roll droops unevenly over the boot top
     droop *= 0.003 + 0.006 * (0.5 + 0.5 * math.sin(th + 0.6 + 1.5 * side))
     zz = z - dip * ((1 - math.cos(th)) * 0.5) ** 1.5 - droop
@@ -179,10 +182,11 @@ def _split_xy(i):
     c, s = math.cos(a), math.sin(a)
     cx, _ = leg_c(Z_SPLIT)
     rx = cx + _thigh_r(Z_SPLIT)
-    ry = 0.116
+    ry = SPLIT_RY
     e = 2.0 / 2.4
+    ry *= 1.0 - 0.10 * abs(s) ** 8                    # centre front / back start to curve under
     return (rx * math.copysign(abs(c) ** e, c), 0.001 + ry * math.copysign(abs(s) ** e, s),
-            0.015 * abs(s) ** 6)
+            SPLIT_DIP * abs(s) ** 4)
 
 
 def _pelvis_pt(i, z):
@@ -203,14 +207,18 @@ def build_trousers():
         mb.strip(a, b, closed=True)
     split = prs[-1]
     # ---- crotch gusset: 2 quads wide, 6 long, from back centre (8) under the crotch to front centre (24)
-    yb = 0.116
-    ys = [yb * f for f in (0.66, 0.34, 0.0, -0.34, -0.66)]
+    yb = SPLIT_RY
+    ys = [yb * f for f in (0.68, 0.35, 0.0, -0.35, -0.68)]
 
     def saddle_z(y):
-        return Z_SPLIT - 0.015 - 0.027 * math.sqrt(max(0.0, 1 - (y / yb) ** 2))
+        return Z_SPLIT - SPLIT_DIP - 0.016 * math.sqrt(max(0.0, 1 - (y / yb) ** 2))
+    x7 = mb.v[split[7]].x
+
+    def gx(y):                                        # gusset is GAP wide under the crotch, flares to the ring
+        return GAP + (x7 - GAP) * 0.75 * abs(y / yb) ** 2.5
     cen = mb.add([V((0.0, y, saddle_z(y))) for y in ys])
-    lft = mb.add([V((GAP, y, saddle_z(y) - 0.005)) for y in ys])
-    rgt = mb.add([V((-GAP, y, saddle_z(y) - 0.005)) for y in ys])
+    lft = mb.add([V((gx(y), y, saddle_z(y) - 0.005 * (1 - abs(y / yb)))) for y in ys])
+    rgt = mb.add([V((-gx(y), y, saddle_z(y) - 0.005 * (1 - abs(y / yb)))) for y in ys])
     line_c = [split[8]] + cen + [split[24]]
     line_l = [split[7]] + lft + [split[25]]
     line_r = [split[9]] + rgt + [split[23]]
@@ -224,12 +232,13 @@ def build_trousers():
         for k, (z, r, dw) in enumerate(LEG_ROWS):
             pts = []
             for j in range(NL):
-                p = trouser_pt(z, r, TAU * j / NL, side, dip=_DIP.get(k, 0.0), droop=dw)
+                p = trouser_pt(z, r, TAU * j / NL, side, dip=_DIP.get(k, 0.0), droop=dw,
+                               seat=_SEAT.get(k, 0.0))
                 pts.append(V((p.x * side, p.y, p.z)))
             new = mb.add(pts)
             mb.strip(ring, new, closed=True)
             ring = new
-    return mb.obj("trousers", "main", sharp_angle=60)
+    return mb.obj("trousers", "main", sharp_angle=75)
 
 
 def build_knee_band(side=1):
@@ -310,15 +319,15 @@ FOOT = [
     (-0.078, -0.091, 0.1410, 0.0580, 0.0525, 48.0),
     (-0.096, -0.109, 0.1290, 0.0580, 0.0540, 50.0),
     (-0.114, -0.127, 0.1190, 0.0580, 0.0540, 52.0),
-    (-0.132, -0.144, 0.1120, 0.0575, 0.0535, 53.0),
-    (-0.150, -0.160, 0.1090, 0.0565, 0.0525, 54.0),
-    (-0.167, -0.175, 0.1050, 0.0540, 0.0500, 55.0),
-    (-0.181, -0.188, 0.0970, 0.0490, 0.0455, 56.0),
-    (-0.189, -0.1955, 0.0830, 0.0420, 0.0395, 57.0),
+    (-0.132, -0.144, 0.1140, 0.0575, 0.0535, 53.0),
+    (-0.150, -0.160, 0.1125, 0.0565, 0.0525, 54.0),
+    (-0.167, -0.176, 0.1095, 0.0540, 0.0500, 55.0),
+    (-0.182, -0.189, 0.1010, 0.0490, 0.0455, 56.0),
+    (-0.190, -0.1965, 0.0860, 0.0420, 0.0395, 57.0),
 ]
 TOE_STEP = 0.0028                 # toe cap leather sits this far proud -> seam line
 FOOT_US = [(1, 0), (2, 0), (3, 0), (4, 0), (4.84, 0), (4.96, 1), (6, 1), (7, 1), (8, 1), (9, 1)]
-TOE_BULGE = 0.006
+TOE_BULGE = 0.0045
 
 
 def dome_ring(u, step=0):
@@ -432,6 +441,7 @@ def build_sole():
            (0.0095, _sole_w(0.0095), notch), (-0.008, _sole_w(-0.008), notch), (-0.026, _sole_w(-0.026), notch),
            (-0.040, _sole_w(-0.040), 0.0)]
     st += [(y, _sole_w(y), 0.0) for y in (-0.058, -0.078, -0.098, -0.118, -0.136, yt)]
+    e = 2.0 / 3.0                                     # squarer toe
     for a in (72, 50, 28):
         a = math.radians(a)
         st.append((yt - rt * math.cos(a) ** e, _sole_w(yt) * math.sin(a) ** e, 0.0))

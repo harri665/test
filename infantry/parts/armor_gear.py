@@ -234,7 +234,7 @@ LP_P = 3.2
 LP_T, LP_TRIM_H, LP_TRIM_W = 0.010, 0.004, 0.017
 LP_PHI = RAD(88)
 LP_GAP = 0.004                # air between lower plate top edge and the slab's under surface
-LP_TOP_CAP = 1.462            # front / back legs of the plate stop here (flat top instead of a spike)
+LP_TOP_CAP = 1.458            # the inner ends of the front / back legs stop here (clipped corner, no spike)
 
 
 def _lp_r(s):                 # inner semi-axis; sleeve is <= arm_radius + 0.030 (0.088 -> 0.080)
@@ -253,10 +253,12 @@ def _lp_point(s, phi, extra=0.0):
 
 def _lp_s_range(phi):
     tau = LP_T + LP_TRIM_H
+    k = _clamp((abs(phi) - RAD(48)) / (LP_PHI - RAD(48)))
+    cap = LP_TOP_CAP + 0.055 * (1 - k * k * (3 - 2 * k))   # clip the inner top corners of the legs
     s_top = 0.0
     for _ in range(8):                                   # top edge tucks under the slab
         q = _lp_point(s_top, phi, tau)
-        s_top += (q.z - min(_slab_under(q.x, q.y) - LP_GAP, LP_TOP_CAP)) / -_AD.z
+        s_top += (q.z - min(_slab_under(q.x, q.y) - LP_GAP, cap)) / -_AD.z
     s_bot = 0.2
     for _ in range(4):                                   # bottom edge horizontal at pauldron_bottom_z
         q = _lp_point(s_bot, phi)
@@ -366,7 +368,7 @@ def _buckle():
     rc = (rx + BELT_RO) ** 2 / (ry + BELT_RO)     # belt curvature radius at the front
 
     def W(x, depth, z):                           # buckle space -> world, wrapped onto the belt curve;
-        lean = 0.30 * max(0.0, BELT_ZM - 0.012 - z)   # lower bar kicks out over the flaring skirt
+        lean = 0.004 + 0.085 * (BELT_ZM - z)      # tilted ~5 deg: lower bar rests on the flaring skirt
         return V((x, yf - BELT_RIM - 0.001 - depth - lean + x * x / (2 * rc), z))
 
     hw, hh, bw, d, c = 0.047, 0.036, 0.0065, 0.011, 0.003
@@ -385,9 +387,9 @@ def _buckle():
     frame = lib.mesh_object("buckle_frame", *_torus(rings), topo="rigid")
     sag = hw * hw / (2 * rc)
     prong = lib.box("buckle_prong", (2 * hw + 0.010, 0.0055, 0.0085), bevel_w=0.0015,
-                    loc=(-0.003, yf - BELT_RIM - 0.001 - d - 0.002 + sag, BELT_ZM))
+                    loc=(-0.003, yf - BELT_RIM - 0.005 - d - 0.002 + sag, BELT_ZM))
     hinge = lib.cylinder("buckle_hinge", 0.0095, 0.018, n=8, bevel_w=0.0015,
-                         loc=(hw, yf - BELT_RIM - 0.001 - d * 0.5 + sag, BELT_ZM))
+                         loc=(hw, yf - BELT_RIM - 0.005 - d * 0.5 + sag, BELT_ZM))
     return lib.join([frame, prong, hinge], "belt_buckle", topo="rigid")
 
 

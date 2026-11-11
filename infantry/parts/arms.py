@@ -125,7 +125,7 @@ def t_of(s):
 
 
 BAG = [(0.0, 0.004), (0.60, 0.004), (0.80, 0.007), (1.0, 0.009), (1.12, 0.006), (1.5, 0.003), (1.9, 0.0)]
-FOLD = [(-0.084, 0.0), (-0.060, 0.006), (-0.036, -0.006), (-0.012, 0.006), (0.0, 0.007),
+FOLD = [(-0.108, 0.0), (-0.084, -0.003), (-0.060, 0.006), (-0.036, -0.006), (-0.012, 0.006), (0.0, 0.007),
         (0.012, 0.004), (0.034, 0.0)]
 
 
@@ -263,10 +263,10 @@ def build_bracer(path):
 
     # --- rivets: two rows on the outer half
     studs = []
-    for fx, rad in ((0.235, 0.0105), (0.83, 0.0088)):
+    for fx, rad in ((0.235, 0.0125), (0.83, 0.0105)):
         for k, ang in enumerate((-90.0, -45.0, 0.0, 45.0, 90.0)):
             p, nrm, t = surf(fx * Lb, ang, -0.0008)
-            studs.append(lib.stud(f"bracer_stud_{fx}_{k}", radius=rad, height=rad * 0.55, n=12, loc=p, normal=nrm))
+            studs.append(lib.stud(f"bracer_stud_{fx}_{k}", radius=rad, height=rad * 0.5, n=12, loc=p, normal=nrm))
     studs = lib.join(studs, "Bracer_studs_L", topo="rigid")
     return [shell, straps, studs]
 
@@ -274,7 +274,7 @@ def build_bracer(path):
 # ------------------------------------------------------------------ hand
 # Hand-local coordinates: x = u across the palm (+ towards the thumb / front of the character),
 # y = v thickness (+ back of the hand, - palm), z = s along the hand (wrist -> finger tips).
-FINGER_W = [0.0215, 0.0225, 0.0210, 0.0195]          # index, middle, ring, pinky
+FINGER_W = [0.0220, 0.0230, 0.0215, 0.0200]          # index, middle, ring, pinky
 PALM_HW = sum(FINGER_W) / 2
 _b = [PALM_HW]
 for _w in FINGER_W:
@@ -292,13 +292,13 @@ NP = 20                                               # verts around the palm / 
 NR = 9                                                # palm rows (spans) wrist -> finger webs
 S0 = 0.011                                            # first palm row
 WEB = [(-1.0, 0.082), (-0.76, 0.087), (-0.28, 0.096), (0.23, 0.100), (0.75, 0.097), (1.0, 0.093)]
-W_KEYS = [(0.0, 0.0310), (0.25, 0.0350), (0.6, 0.0405), (1.0, PALM_HW)]
-T_KEYS = [(0.0, 0.0225), (0.3, 0.0180), (0.7, 0.0145), (1.0, 0.0112)]
+W_KEYS = [(0.0, 0.0360), (0.25, 0.0385), (0.6, 0.0415), (1.0, PALM_HW)]
+T_KEYS = [(0.0, 0.0285), (0.3, 0.0205), (0.7, 0.0155), (1.0, 0.0116)]
 P_KEYS = [(0.0, 2.3), (0.3, 3.0), (1.0, 3.6)]
 FINGER_LEN = [0.080, 0.088, 0.082, 0.064]
 FINGER_FAN = [4.0, 1.0, -2.5, -6.5]                   # degrees, + towards the thumb
 FINGER_BEND = [(9, 20, 12), (12, 24, 13), (15, 27, 15), (18, 30, 16)]   # MCP, PIP, DIP curl (deg)
-FINGER_RV = [0.0098, 0.0100, 0.0097, 0.0088]
+FINGER_RV = [0.0101, 0.0103, 0.0100, 0.0091]
 
 
 def _sec(j, Wd, Td, p):
@@ -413,20 +413,20 @@ def build_hand():
         grid.append(row)
 
     # thenar mound (ball of the thumb)
-    bump_c, bump_d = V((0.028, -0.016, 0.034)), V((0.45, -0.89, 0.0)).normalized()
+    bump_c, bump_d = V((0.030, -0.018, 0.034)), V((0.45, -0.89, 0.0)).normalized()
     for r in range(1, NR + 1):
         for j in range(NP):
             p = grid[r][j]
             p = p + bump_d * (0.005 * math.exp(-((p - bump_c).length / 0.022) ** 2))
             # the web between thumb and index finger is drawn in a little
-            grid[r][j] = p + V((-0.0045, 0.002, 0.0)) * math.exp(-((p - V((0.037, -0.006, 0.058))).length / 0.011) ** 2)
+            grid[r][j] = p + V((-0.0045, 0.002, 0.0)) * math.exp(-((p - V((0.040, -0.006, 0.058))).length / 0.011) ** 2)
 
     # thumb root: a 2x2 patch on the palm-side thumb corner of the palm becomes the thumb's base ring
     R1 = 2
     hole_cells = {(R1, 18), (R1, 19), (R1 + 1, 18), (R1 + 1, 19)}        # (row, col) of removed quads
     hole_vert = (R1 + 1, 19)
     h = [(R1, 0), (R1, 19), (R1, 18), (R1 + 1, 18), (R1 + 2, 18), (R1 + 2, 19), (R1 + 2, 0), (R1 + 1, 0)]
-    th_c = V((0.0335, -0.0115, 0.0360))
+    th_c = V((0.0365, -0.0125, 0.0360))
     th_n0 = V((0.84, -0.40, 0.36)).normalized()
     th_dir = V((0.50, -0.20, 0.84)).normalized()
     vhint, uhint = V((0.0, 1.0, 0.0)), V((1.0, 0.0, -1.0))
@@ -533,8 +533,8 @@ def build_hand():
 
     # ---------------- glove cuff (thick, flares up inside the sleeve cuff)
     Wb, Tb = Wd0 * 0.96, Td0 * 0.96
-    prof = [(0.000, 0.0008), (0.000, 0.0065), (-0.004, 0.0085), (-0.008, 0.0100), (-0.010, 0.0085),
-            (-0.022, 0.0105), (-0.034, 0.0120), (-0.045, 0.0130), (-0.045, 0.0100), (-0.022, 0.0040)]
+    prof = [(0.000, 0.0008), (0.000, 0.0050), (-0.004, 0.0065), (-0.008, 0.0075), (-0.010, 0.0060),
+            (-0.022, 0.0070), (-0.034, 0.0080), (-0.045, 0.0090), (-0.045, 0.0060), (-0.022, 0.0030)]
     cuff = lib.mesh_object("Glove_cuff_L", *loop_loft([[Wf(p) for p in section(s, Wb + g, Tb + g * 1.5, 2.3)]
                                                         for s, g in prof]), topo="main", sharp_angle=60)
 

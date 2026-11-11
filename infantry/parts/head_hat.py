@@ -12,8 +12,9 @@ head        32 around the skull, 16 around the neck.  The skull is a 32-ring tub
 hat         one closed 32-around shell: quad top cap, crown, brim top, rim loop, brim underside,
             sweatband cone that meets the head at brow level (closed off inside the skull).
 hat_band    closed 32-around ribbon, + rigid slide buckle / keeper / studs, front plaque + emblem.
-mask        rigid plate: regular column/row grid, each slit is an inset (recessed) groove,
-            plain back shell + rim so the plate is a closed solid, bevelled edge, rivets.
+mask        rigid plate: regular column/row grid, each of the 5 slits is an inset (recessed)
+            groove, plain back shell + bevelled rim so the plate is a closed solid, rivets,
+            and a cloth retaining strap round the back of the head (follows the head loops).
 """
 import math
 
@@ -263,7 +264,7 @@ def build_hat():
     rings.append([head_pt(TAU * i / n, BRIM_Z + 0.004, grow=-0.022) + V((0, 0, 0.014)) for i in range(n)])
     rings.append([head_pt(TAU * i / n, BRIM_Z - 0.001, grow=-0.003) for i in range(n)])
     # brim underside (inner -> rim)
-    T = (0.06, 0.25, 0.44, 0.63, 0.82, 0.955)
+    T = (0.06, 0.25, 0.44, 0.63, 0.80, 0.93)
     rings.append(_hat_ring(CROWN_R[0] - 0.002, CROWN_R[1] - 0.002, BRIM_Z - BRIM_TH))
     for t in T[1:]:
         rx, ry = _brim_r(t)
@@ -303,7 +304,6 @@ BAND_OFF = 0.0045
 
 def build_band():
     """Closed ribbon around the base of the crown."""
-    n = N_HAT
     z0, z1 = BAND_Z
     zm = (z0 + z1) / 2
     sect = [(-0.004, z0), (0.003, z0), (BAND_OFF, z0 + 0.003), (BAND_OFF, zm), (BAND_OFF, z1 - 0.003),
@@ -381,15 +381,17 @@ def build_band_details():
     objs = []
     band_h = BAND_Z[1] - BAND_Z[0]
     # front plaque carrying the faction emblem
-    plaque = _on_band(_plaque("hat_plaque", 0.040, band_h + 0.010, 0.006, 0.0015), -math.pi / 2, lift=-0.001)
+    plaque = _on_band(_plaque("hat_plaque", 0.040, band_h + 0.008, 0.006, 0.0015), -math.pi / 2,
+                       z=BAND_Z[0] + band_h / 2 + 0.002, lift=-0.001)
     p, nrm = _band_point(-math.pi / 2, lift=0.005)
     emblem = lib.emblem_cross("hat_emblem", size=0.0125, thickness=0.003,
-                              loc=p + V((0, 0, 0.0035)), normal=nrm, up=(0, 0, 1))
+                              loc=p + V((0, 0, 0.0055)), normal=nrm, up=(0, 0, 1))
     objs += [plaque, emblem]
     # slide buckle + keeper where the band fastens
-    frame = _on_band(_frame("b_frame", 0.024, band_h + 0.004, 0.0042, 0.004), BUCKLE_A, lift=0.0)
+    frame = _on_band(_frame("b_frame", 0.024, band_h - 0.001, 0.0042, 0.004), BUCKLE_A,
+                     z=BAND_Z[0] + band_h / 2 + 0.001)
     prong = _on_band(lib.box("b_prong", (0.026, 0.003, 0.0034), loc=(0, -0.0035, 0)), BUCKLE_A)
-    keeper = _on_band(_plaque("b_keeper", 0.008, band_h + 0.003, 0.003, 0.001, x0=-0.027), BUCKLE_A, lift=-0.0005)
+    keeper = _on_band(_plaque("b_keeper", 0.008, band_h + 0.001, 0.003, 0.001, x0=-0.027), BUCKLE_A, lift=-0.0005)
     tail = _on_band(_plaque("b_tail", 0.030, band_h - 0.010, 0.0022, 0.0008, x0=-0.030), BUCKLE_A, lift=-0.0005)
     objs.append(lib.join([frame, prong, keeper, tail], "hat_buckle", topo="rigid"))
     # studs round the band
