@@ -131,7 +131,8 @@ def report(objs):
     return rows
 
 
-def render_views(objs, out, full=False, zoom=None, res=(720, 960), samples=12, views=None, wire=True):
+def render_views(objs, out, full=False, zoom=None, res=(720, 960), samples=12, views=None, wire=True,
+                 return_tiles=False):
     sc = bpy.context.scene
     sc.render.engine = "CYCLES"
     sc.cycles.device = "CPU"
@@ -188,6 +189,8 @@ def render_views(objs, out, full=False, zoom=None, res=(720, 960), samples=12, v
         sc.render.filepath = os.path.join(tmp, label.replace("/", "_") + ".png")
         bpy.ops.render.render(write_still=True)
         tiles.append((label, Image.open(sc.render.filepath).convert("RGBA")))
+    if return_tiles:
+        return tiles
     W, H = res
     sheet = Image.new("RGBA", (W * len(tiles), H + 40), (24, 24, 28, 255))
     dr = ImageDraw.Draw(sheet)

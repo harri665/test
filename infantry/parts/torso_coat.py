@@ -252,7 +252,19 @@ def _solve_core():
             sd = float((P[i] - body_p[k]).dot(body_n[k]))
             if sd < OFF + 0.002 or int(i) in target:
                 target[int(i)] = P[i] + (OFF + 0.002 - sd) * body_n[k] if sd < OFF + 0.002 else P[i].copy()
-    return index, [V(p) for p in P], faces
+    verts = [V(p) for p in P]
+    # turned-in hem around the neck opening (added after the solve so it does not bend the shoulders)
+    ring = [index[k] for k in _neck_keys()]
+    for grow, dz in ((-0.010, -0.016), (-0.020, -0.034)):
+        lip = []
+        for i in range(16):
+            lip.append(len(verts))
+            verts.append(_neckline(math.radians(270.0 + 22.5 * i), grow=grow, dz=dz))
+        for i in range(16):
+            j = (i + 1) % 16
+            faces.append((ring[i], ring[j], lip[j], lip[i]))
+        ring = lip
+    return index, verts, faces
 
 
 def _check_armholes(ob):
@@ -323,14 +335,15 @@ class Pattern:
     """Welded 2D quad mesh in (U, z) pattern space."""
 
     def __init__(self):
-        self.pts, self.faces, self._key = [], [], {}
+        self.pts, self.faces = [], []
 
     def vid(self, p):
-        k = (round(p[0] * 1e5), round(p[1] * 1e5))
-        if k not in self._key:
-            self._key[k] = len(self.pts)
-            self.pts.append(V((p[0], p[1])))
-        return self._key[k]
+        p = V((p[0], p[1]))
+        for i, q in enumerate(self.pts):
+            if (q - p).length_squared < 1e-12:
+                return i
+        self.pts.append(p)
+        return len(self.pts) - 1
 
     def add_grid(self, G):
         ids = [[self.vid(p) for p in row] for row in G]
@@ -380,18 +393,36 @@ def _coons(bot, right, top, left):
     return G
 
 
-def _tri_patch(M, a, b, c, n_ab, n_bc, n_ca):
-    """All-quad fill of a triangle with given edge counts: three grids around one valence-3 centre."""
+def _tri_patch(M, a, b, c, n_ab, n_bc, n_ca, ab=None):
+    """All-quad fill of a triangle with given edge counts: three grids around one valence-3 centre.
+    `ab` optionally replaces the straight a->b side by a curve of n_ab + 1 points."""
     assert (n_ab + n_bc + n_ca) % 2 == 0
     p = (n_ab + n_bc - n_ca) // 2
     r, q = n_ab - p, n_bc - p
     assert min(p, q, r) >= 1, "edge counts violate the triangle inequality"
-    s_ab, s_bc, s_ca = a.lerp(b, p / n_ab), b.lerp(c, q / n_bc), c.lerp(a, r / n_ca)
+    ab = ab or _line(a, b, n_ab)
+    s_ab, s_bc, s_ca = ab[p], b.lerp(c, q / n_bc), c.lerp(a, r / n_ca)
     o = (s_ab + s_bc + s_ca) / 3
-    M.add_grid(_coons(_line(a, s_ab, p), _line(s_ab, o, q), _line(s_ca, o, p), _line(a, s_ca, q)))
-    M.add_grid(_coons(_line(b, s_bc, q), _line(s_bc, o, r), _line(s_ab, o, q), _line(b, s_ab, r)))
+    M.add_grid(_coons(ab[:p + 1], _line(s_ab, o, q), _line(s_ca, o, p), _line(a, s_ca, q)))
+    M.add_grid(_coons(_line(b, s_bc, q), _line(s_bc, o, r), _line(s_ab, o, q), ab[p:][::-1]))
     M.add_grid(_coons(_line(c, s_ca, r), _line(s_ca, o, p), _line(s_bc, o, r), _line(c, s_bc, p)))
     return M
+
+
+def _offset_polyline(pts, inset, sgn=1.0):
+    """Mitered parallel curve of a 2D poly line (sgn picks the side)."""
+    out = []
+    for i, p in enumerate(pts):
+        e1 = (p - pts[i - 1]).normalized() if i > 0 else None
+        e2 = (pts[i + 1] - p).normalized() if i < len(pts) - 1 else None
+        n1 = V((e1.y, -e1.x)) * sgn if e1 else None
+        n2 = V((e2.y, -e2.x)) * sgn if e2 else None
+        if n1 is None or n2 is None:
+            out.append(p + (n1 or n2) * inset)
+        else:
+            m = (n1 + n2).normalized()
+            out.append(p + m * (inset / max(m.dot(n1), 0.45)))
+    return out
 
 
 # ============================================================================ 3D builders
@@ -418,42 +449,51 @@ def _panel(name, S, M, off, thick, back=False, topo="main"):
     return lib.mesh_object(name, *_thicken(outer, inner, M.faces), topo=topo)
 
 
-def _strip(name, S, path, back=False, width=0.012, height=0.0025, base=-0.001, topo="main"):
-    """Raised seam welt following a pattern-space poly line; closed box section, all quads."""
-    P = [S.at(u, z, back) for u, z in path]
+def _welt(name, samples, width=0.012, height=0.0025, base=-0.001, topo="support"):
+    """Raised seam welt along (point, normal) samples; closed 4-quad section, all quads."""
     rings = []
-    for i, (p, n) in enumerate(P):
-        t = (P[min(i + 1, len(P) - 1)][0] - P[max(i - 1, 0)][0]).normalized()
+    for i, (p, n) in enumerate(samples):
+        t = (samples[min(i + 1, len(samples) - 1)][0] - samples[max(i - 1, 0)][0]).normalized()
         b = n.cross(t).normalized()
         rings.append([p + b * (-width / 2) + n * base, p + b * (-width / 2 + 0.002) + n * height,
                       p + b * (width / 2 - 0.002) + n * height, p + b * (width / 2) + n * base])
-    return lib.lofted(name, rings, closed=True, cap_start=False, cap_end=False, topo=topo)
+    return lib.lofted(name, rings, closed=True, cap_start=True, cap_end=True, topo=topo)
+
+
+def _strip(name, S, path, back=False, off=0.0, **kw):
+    """Seam welt following a pattern-space poly line on the wrapped surface."""
+    samples = []
+    for u, z in path:
+        p, n = S.at(u, z, back)
+        samples.append((p + n * off, n))
+    return _welt(name, samples, **kw)
 
 
 # ============================================================================ parts
 def _collar():
-    n_seg, n_row = 40, 7
+    n_seg, n_row = 36, 8
     thick = 0.010
-    top_rx, top_ry = C["collar_top_r"]
-    top_z = C["collar_top_z"]
-    a0, a1 = math.radians(25.0), math.radians(40.0)     # half angle of the front V at base / top
+    rim_r = 0.0068
+    top_rx, top_ry = (r - 0.002 for r in C["collar_top_r"])    # the rolled rim brings it out to collar_top_r
+    top_z = C["collar_top_z"] - rim_r - 0.001                  # ... and up to collar_top_z
+    a0, a1 = math.radians(22.0), math.radians(56.0)     # half angle of the front V at base / top
     grid = []
     for h in range(n_row + 1):
         t = h / n_row
-        alpha = a0 + (a1 - a0) * t
+        alpha = a0 + (a1 - a0) * t ** 1.3
         row = []
         for k in range(n_seg + 1):
             phi = 1.5 * math.pi + alpha + (math.tau - 2 * alpha) * k / n_seg
             base = _neckline(phi, grow=-0.002, dz=-0.012)
-            d = abs(math.degrees(phi) - 270.0 - (360.0 if math.degrees(phi) > 450.0 else 0.0))
+            d = abs(math.degrees(phi) - 270.0)
             d = min(d, 360.0 - d)
-            w = min(max((80.0 - d) / 40.0, 0.0), 1.0)
+            w = min(max((100.0 - d) / 44.0, 0.0), 1.0)
             w = w * w * (3 - 2 * w)
-            top = V((top_rx * math.cos(phi), top_ry * math.sin(phi), top_z - 0.030 * w))
+            top = V((top_rx * math.cos(phi), top_ry * math.sin(phi), top_z - 0.028 * w))
             f = t ** 1.15
             row.append(V((base.x + (top.x - base.x) * f, base.y + (top.y - base.y) * f, base.z + (top.z - base.z) * t)))
         grid.append(row)
-    outer, inner, faces = [], [], []
+    outer, inner, normals, faces = [], [], [], []
     w_ = n_seg + 1
     for h in range(n_row + 1):
         for k in range(w_):
@@ -464,27 +504,203 @@ def _collar():
             if n.dot(V((p.x, p.y, 0))) < 0:
                 n = -n
             outer.append(p)
+            normals.append(n)
             inner.append(p - n * thick)
     for h in range(n_row):
         for k in range(n_seg):
             a = h * w_ + k
             faces.append((a, a + 1, a + 1 + w_, a + w_))
-    ob = lib.mesh_object("coat_collar", *_thicken(outer, inner, faces), topo="main")
+    wall = lib.mesh_object("coat_collar", *_thicken(outer, inner, faces), topo="main")
+    mid = lambda h, k: (outer[h * w_ + k] + inner[h * w_ + k]) / 2
+    # rolled rim: piping up the left front edge, around the top, down the right front edge
+    path = [mid(h, 0) for h in range(2, n_row)] + [mid(n_row, k) for k in range(w_)] + [mid(h, n_seg) for h in range(n_row - 1, 1, -1)]
+    radii = []
+    for i in range(len(path)):
+        a, b, c = path[max(i - 1, 0)], path[i], path[min(i + 1, len(path) - 1)]
+        turn = (b - a).angle(c - b, 0.0) if 0 < i < len(path) - 1 else 0.0
+        radii.append(rim_r / max(math.cos(turn / 2), 0.75))
+    rim = lib.lofted("coat_collar_rim", lib.tube_rings(path, radii, n=6, x_hint=(1, 0, 0)), cap_start=True, cap_end=True, topo="main")
+    # collar stand seam: welt around the base of the collar, just above the yoke
+    band = _welt("coat_collar_band", [(outer[w_ + k], normals[w_ + k]) for k in range(w_)], width=0.014, height=0.003)
     # keep clear of the head ellipsoid (+ 1 cm face mask in front)
     hc, hr = spec.HEAD_CENTER, spec.HEAD_RADII
     worst = 9.0
-    for v in ob.data.vertices:
-        p = v.co
-        ry = hr.y + (0.010 if p.y < hc.y else 0.0)
-        worst = min(worst, math.sqrt(((p.x - hc.x) / hr.x) ** 2 + ((p.y - hc.y) / ry) ** 2 + ((p.z - hc.z) / hr.z) ** 2))
+    for ob in (wall, rim):
+        for v in ob.data.vertices:
+            p = v.co
+            ry = hr.y + (0.010 if p.y < hc.y else 0.0)
+            worst = min(worst, math.sqrt(((p.x - hc.x) / hr.x) ** 2 + ((p.y - hc.y) / ry) ** 2 + ((p.z - hc.z) / hr.z) ** 2))
     assert worst > 1.12, f"collar too close to the head (scaled distance {worst:.3f})"
-    return ob
+    return [wall, rim, band]
+
+
+def _isect(a, b, c, d):
+    """Intersection of the 2D lines a-b and c-d."""
+    r, q = b - a, d - c
+    den = r.x * q.y - r.y * q.x
+    t = ((c.x - a.x) * q.y - (c.y - a.y) * q.x) / den
+    return a + r * t
+
+
+# front pattern, read off the reference front view as (world x, z)
+FLAP_EDGE_X = (-0.075, -0.085)      # free edge of the overlapping (wearer's left) front, waist -> lapel tip
+FLAP_SEAM_X = 0.150                 # the flap ends in a princess seam on the wearer's left
+LAPEL_TIP_Z = 1.265
+LAPEL_TOP = (0.036, 1.497)
+LAPEL_CTRL = (0.088, 1.492)         # corner of the lapel's top edge where it leaves the collar
+LAPEL_PEAK = (0.185, 1.385)
+BUTTON_X = (-0.045, 0.065)
+BUTTON_Z = (1.145, 1.200, 1.255)
+FLAP_OFF = 0.008                    # layering: every overlapping panel steps out 8 mm
+
+
+def _front_panels(S):
+    objs = []
+    z0 = Z_BOTTOM + 0.015
+    tip = S.uz(FLAP_EDGE_X[1], LAPEL_TIP_Z)
+    # ---- overlapping flap: rectangle below the lapel tip + triangle running up under the lapel
+    M = Pattern()
+    n_col, n_row = 11, 7
+    bl = S.uz(FLAP_EDGE_X[0], z0)
+    grid = []
+    for j in range(n_row + 1):
+        z = z0 + (LAPEL_TIP_Z - z0) * j / n_row
+        grid.append(_line(bl.lerp(tip, j / n_row), S.uz(FLAP_SEAM_X, z), n_col))
+    M.add_grid(grid)
+    top_r = S.uz(FLAP_SEAM_X, LAPEL_PEAK[1] + 0.007)
+    _tri_patch(M, tip, grid[-1][-1], top_r, n_col, 4, 11)
+    M.relax(40)
+    objs.append(_panel("coat_front_flap", S, M, FLAP_OFF, FLAP_OFF - 0.001))
+    # ---- left lapel (on top of the flap): neck / collar corner / peak / tip
+    a, b = S.uz(*LAPEL_TOP), S.uz(*LAPEL_PEAK)
+    k = S.uz(*LAPEL_CTRL)
+    c = S.uz(FLAP_EDGE_X[1] - 0.004, LAPEL_TIP_Z - 0.006)
+    top = _line(a, k, 2) + _line(k, b, 6)[1:]      # short run under the collar, then straight to the peak
+    M = _tri_patch(Pattern(), a, b, c, 8, 13, 13, ab=top).relax(80)
+    objs.append(_panel("coat_lapel_L", S, M, 2 * FLAP_OFF, 2 * FLAP_OFF - 0.002))
+    trim = _offset_polyline(top + _line(b, c, 13)[1:], 0.014, 1.0)[2:-2]
+    objs.append(_strip("coat_lapel_trim_L", S, trim, off=2 * FLAP_OFF, width=0.010))
+    # ---- right lapel: mirrored outline, cut off 12 mm behind the left lapel's roll line
+    a2, b2, c2 = V((-a.x, a.y)), V((-b.x, b.y)), V((-c.x, c.y))
+    x_roll = _isect(a2, c2, a, c)
+    x_edge = _isect(b2, c2, a, c)
+    x_roll = x_roll + (c2 - a2).normalized() * 0.012
+    x_edge = x_edge + (c2 - b2).normalized() * 0.012
+    top2 = [V((-q.x, q.y)) for q in top]
+    M = Pattern()
+    M.add_grid(_coons(top2, _line(b2, x_edge, 7), _line(x_roll, x_edge, 8), _line(a2, x_roll, 7)))
+    M.relax(40)
+    objs.append(_panel("coat_lapel_R", S, M, FLAP_OFF + 0.002, FLAP_OFF))
+    trim = _offset_polyline(top2 + _line(b2, x_edge, 7)[1:], 0.014, -1.0)[2:]
+    objs.append(_strip("coat_lapel_trim_R", S, trim, off=FLAP_OFF + 0.002, width=0.010))
+    # top-stitch welt along the free edge of the flap
+    st = [V((p.x + 0.018, p.y)) for p in _line(bl, tip, 8)[1:]]
+    objs.append(_strip("coat_flap_stitch", S, st, off=FLAP_OFF, width=0.008, height=0.0015))
+    # ---- matching princess seam on the wearer's right
+    zs = [z0 + (LAPEL_PEAK[1] - 0.008 - z0) * i / 14 for i in range(15)]
+    objs.append(_strip("coat_seam_front_R", S, [S.uz(-FLAP_SEAM_X, z) for z in zs]))
+    # ---- buttons: two columns on the flap + one on each lapel peak
+    studs = []
+    for x in BUTTON_X:
+        for z in BUTTON_Z:
+            studs.append((S.uz(x, z), FLAP_OFF))
+    centroid = (a + b + c) / 3
+    peak_btn = b + (centroid - b).normalized() * 0.040
+    studs.append((peak_btn, 2 * FLAP_OFF))
+    studs.append((V((-peak_btn.x, peak_btn.y)), FLAP_OFF + 0.002))
+    parts = []
+    for k, (uz, off) in enumerate(studs):
+        pt, n = S.at(uz.x, uz.y)
+        parts.append(lib.stud(f"btn{k}", radius=0.013, height=0.007, n=12, loc=pt + n * (off - 0.0008), normal=n))
+    objs.append(lib.join(parts, "coat_buttons", topo="rigid"))
+    return objs
+
+
+def _yoke(index, verts, faces_unused):
+    """Back shoulder yoke: the core quads above back row 2 (+ one row over the shoulder seam), subdivided
+    once and lifted 8 mm, so its edge reads as the yoke seam and as the seam band around the armhole."""
+    vid = lambda *k: index[_canon(k)]
+    quads = []
+    strap_b = list(range(2, 6)) + list(range(10, 14))
+    strap_f = list(range(18, 22)) + list(range(26, 30))
+    for r in range(2, 6):
+        for c in (range(2, 14) if r < 4 else strap_b):
+            quads.append((vid("B", r, c), vid("B", r, c + 1), vid("B", r + 1, c + 1), vid("B", r + 1, c)))
+    for c in strap_f:
+        quads.append((vid("F", 5, c), vid("F", 5, c + 1), vid("F", 6, c + 1), vid("F", 6, c)))
+    used = sorted({i for q in quads for i in q})
+    remap = {i: k for k, i in enumerate(used)}
+    tmp = lib.mesh_object("yoke_tmp", [verts[i] for i in used], [tuple(remap[i] for i in q) for q in quads])
+    lib.subdivide(tmp, 1)
+    me = tmp.data
+    co = [v.co.copy() for v in me.vertices]
+    no = [v.normal.copy() for v in me.vertices]
+    centre = V((0.0, 0.0, 1.40))
+    if sum(1 for p, n in zip(co, no) if n.dot(p - centre) > 0) < len(co) / 2:
+        no = [-n for n in no]
+    polys = [tuple(p.vertices) for p in me.polygons]
+    bpy.data.objects.remove(tmp)
+    bpy.data.meshes.remove(me)
+    outer = [p + n * FLAP_OFF for p, n in zip(co, no)]
+    inner = [p + n * 0.001 for p, n in zip(co, no)]
+    edge = sorted((verts[vid("B", 2, c)] for c in range(2, 15)), key=lambda p: p.x)
+    return lib.mesh_object("coat_back_yoke", *_thicken(outer, inner, polys), topo="main"), edge
+
+
+def _armhole_seams(S, index, verts):
+    """Seam band around the front / lower half of each armhole (the yoke edge completes the loop on top)."""
+    objs = []
+    for side, name in ((1, "L"), (-1, "R")):
+        pts = [verts[index[("R1", side, i)]] for i in range(1, 13)]
+        nrm = []
+        for p in pts:
+            k = min(range(len(S.co)), key=lambda j: (S.co[j] - p).length_squared)
+            nrm.append(S.no[k])
+        P = lib.smooth_path(pts, 2)
+        N = [n.normalized() for n in lib.smooth_path(nrm, 2)]
+        objs.append(_welt(f"coat_armhole_seam_{name}", list(zip(P, N)), height=0.002))
+    return objs
+
+
+def _back_details(S, yoke_edge):
+    def edge_z(x):
+        for p, q in zip(yoke_edge, yoke_edge[1:]):
+            if p.x <= x <= q.x:
+                return p.z + (q.z - p.z) * (x - p.x) / max(q.x - p.x, 1e-9)
+        return yoke_edge[0].z
+
+    objs = []
+    z0 = Z_BOTTOM + 0.015
+    emblem_z = edge_z(0.0) - 0.085
+    size = 0.070
+    tail = emblem_z - size * 1.6
+    # centre back seam (runs up under the emblem's tail)
+    n = 8
+    objs.append(_strip("coat_seam_back_C", S, [V((0.0, z0 + (tail + 0.012 - z0) * i / n)) for i in range(n + 1)], back=True))
+    # princess seams converging towards the waist
+    for side, name in ((1, "L"), (-1, "R")):
+        top = S.uz(side * 0.135, edge_z(side * 0.135) + 0.006, back=True)
+        bot = S.uz(side * 0.075, z0, back=True)
+        objs.append(_strip(f"coat_seam_back_{name}", S, _line(bot, top, 17), back=True))
+    # faction emblem, bent onto the back so it does not float at the tips
+    em = lib.emblem_cross("coat_back_emblem", size=size, thickness=0.005, loc=(0, 0, 0), normal=(0, 1, 0), up=(0, 0, 1))
+    for v in em.data.vertices:
+        x, h, z = v.co.x, v.co.y, v.co.z
+        p, nrm = S.at(S.u_of_x(x, emblem_z + z, back=True), emblem_z + z, back=True)
+        v.co = p + nrm * (h + 0.0015)
+    lib.finalize(em, sharp_angle=25)
+    objs.append(em)
+    return objs
 
 
 def build():
     index, verts, faces = _solve_core()
     core = lib.mesh_object("coat_torso", verts, faces, topo="main")
     _check_armholes(core)
-    objs = [core]
-    objs.append(_collar())
+    S = Surface(core)
+    yoke, yoke_edge = _yoke(index, verts, faces)
+    objs = [core, yoke] + _collar()
+    objs += _front_panels(S)
+    objs += _back_details(S, yoke_edge)
+    objs += _armhole_seams(S, index, verts)
     return objs

@@ -368,3 +368,101 @@ def stats(ob):
 
 def reset_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
+
+
+# ------------------------------------------------------------------ detail vocabulary (round 2)
+# Shared so trims, seams, rivets and emblems look the same on every part.
+def rivet(name, radius=0.008, height=0.005, n=8, loc=(0, 0, 0), normal=(0, 0, 1), topo="rigid"):
+    """Closed domed rivet / button (unlike `stud`, the base is capped -> no open edges)."""
+    rs = [ring_z(0, radius, n=n), ring_z(height * 0.55, radius * 0.88, n=n), ring_z(height, radius * 0.5, n=n)]
+    ob = lofted(name, rs, cap_start=True, cap_end=True, topo=topo)
+    return align_z_to(ob, normal, loc)
+
+
+def strip_along(name, points, normals, width=0.02, thickness=0.003, sink=0.001, closed=False,
+                profile="flat", topo="main"):
+    """Raised band that follows a poly line lying on a surface: hem trim, piping, seam line, strap.
+    points[i] on the surface, normals[i] the surface normal there (one normal for all is fine).
+    profile "flat" = rectangular section (4 verts), "round" = half-round piping (6 verts).
+    The band is sunk `sink` into the surface so it never floats.  All quads, quad end caps."""
+    pts = [V(p) for p in points]
+    if not isinstance(normals, (list, tuple)) or isinstance(normals[0], (int, float)):
+        normals = [normals] * len(pts)
+    nrm = [V(n).normalized() for n in normals]
+    k = len(pts)
+    rings = []
+    for i in range(k):
+        a = pts[(i - 1) % k] if closed else pts[max(i - 1, 0)]
+        b = pts[(i + 1) % k] if closed else pts[min(i + 1, k - 1)]
+        t = (b - a).normalized()
+        s = nrm[i].cross(t)
+        if s.length < 1e-6:
+            s = t.orthogonal()
+        s.normalize()
+        n = t.cross(s).normalized() if t.cross(s).dot(nrm[i]) > 0 else -t.cross(s).normalized()
+        hw = width / 2
+        base = pts[i] - n * sink
+        if profile == "round":
+            ring = [base - s * hw, base - s * hw * 0.8 + n * thickness * 0.7, base - s * hw * 0.3 + n * (thickness + sink),
+                    base + s * hw * 0.3 + n * (thickness + sink), base + s * hw * 0.8 + n * thickness * 0.7, base + s * hw]
+        else:
+            ring = [base - s * hw, base - s * hw + n * (thickness + sink), base + s * hw + n * (thickness + sink),
+                    base + s * hw]
+        rings.append(ring)
+    if closed:
+        rings.append(rings[0])
+    verts, faces = loft(rings, closed=True)
+    if not closed:
+        m = len(rings[0])
+        last = (len(rings) - 1) * m
+        if m == 4:
+            faces += [(3, 2, 1, 0), (last, last + 1, last + 2, last + 3)]
+        else:
+            faces += [(5, 4, 1, 0), (4, 3, 2, 1), (last, last + 1, last + 4, last + 5), (last + 1, last + 2, last + 3, last + 4)]
+    return mesh_object(name, verts, faces, topo=topo, sharp_angle=50)
+
+
+def fold_wave(u, v, amp=0.006, count=5.0, seed=0.0, grow=1.0):
+    """Deterministic cloth-fold displacement (metres, along the surface normal).
+    u = position around / across the cloth (0..1), v = position along it (0..1).
+    Folds wander slightly and get deeper toward v=1 when grow > 0 (e.g. toward a hem or a cuff)."""
+    a = math.sin(TAU * (count * u + 0.35 * math.sin(TAU * (v * 1.3 + seed)) + seed))
+    b = 0.45 * math.sin(TAU * (count * 2.3 * u + 0.6 * v + seed * 1.7))
+    return amp * (a + b) / 1.45 * ((1 - grow) + grow * v)
+
+
+def emblem_ornate(name, size=0.06, thickness=0.004, loc=(0, 0, 0), normal=(0, -1, 0), up=(0, 0, 1),
+                  crescents=True, topo="rigid"):
+    """The reference's faction emblem: a tall dagger-cross (long top and longer bottom point, short
+    side points) flanked by two crescent horns in the lower quadrants, between tail and cross-bar.
+    `size` = half width of the cross-bar; overall height ~3.3 * size.  All quads."""
+    cross = emblem_cross(name, size=size, thickness=thickness, long_tail=2.0, normal=(0, 0, 1), up=(0, 1, 0))
+    # stretch the top point: vertices with y > 0.5*size belong to the top tip
+    for v in cross.data.vertices:
+        if v.co.y > size * 0.5:
+            v.co.y *= 1.3
+    objs = [cross]
+    if crescents:
+        for sx in (-1, 1):
+            rows = []
+            r0 = size * 0.92
+            for i in range(9):
+                t = i / 8
+                a = math.radians(-82 + 74 * t)                # arc in the lower quadrant between tail and bar
+                w = size * (0.035 + 0.13 * math.sin(math.pi * t) ** 0.8)
+                d = V((sx * math.cos(a), math.sin(a), 0))
+                c = d * r0
+                rows.append([c - d * w, c - d * w + V((0, 0, thickness * 0.8)), c + d * w + V((0, 0, thickness * 0.8)),
+                             c + d * w])
+            vs, fs = loft(rows, closed=True)
+            last = 8 * 4
+            fs += [(3, 2, 1, 0), (last, last + 1, last + 2, last + 3)]
+            objs.append(mesh_object(name + "_horn", vs, fs, topo=topo, sharp_angle=30))
+    ob = join(objs, name, topo=topo) if len(objs) > 1 else cross
+    n = V(normal).normalized()
+    u = V(up)
+    u = (u - n * u.dot(n)).normalized()
+    x = u.cross(n).normalized()
+    ob.data.transform(Matrix.Translation(V(loc)) @ Matrix((x, u, n)).transposed().to_4x4())
+    ob.data.update()
+    return finalize(ob, sharp_angle=25)
