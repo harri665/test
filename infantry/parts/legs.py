@@ -421,7 +421,7 @@ def build_upper():
 
 # ------------------------------------------------------------------ sole
 def _sole_w(y):
-    return _interp([(-0.150, 0.0660), (-0.110, 0.0665), (-0.070, 0.0635), (-0.030, 0.0605), (0.0, 0.0605),
+    return _interp([(-0.150, 0.0640), (-0.110, 0.0645), (-0.070, 0.0622), (-0.030, 0.0605), (0.0, 0.0605),
                     (0.035, 0.0610)], y)
 
 
@@ -495,12 +495,14 @@ class Sampler:
         return [self.hit(a, -w), self.hit(a, 0.0), self.hit(a, w)], n, t
 
 
-def band(mb, frames, t_in, t_out, closed, edge=0.0015):
-    """Strap with thickness from surface frames.  6-vertex section, all quads."""
+def band(mb, frames, t_in, t_out, closed, edge=0.0015, t_edge=None):
+    """Strap with thickness from surface frames.  6-vertex section, all quads.
+    t_edge: inner offset of the two long edges (they hug the surface closer than the middle)."""
     secs = []
+    t_edge = t_in if t_edge is None else t_edge
     for (pm, p0, pp), n, _t in frames:
         wdir = (pp - pm).normalized()
-        secs.append(mb.add([pm + n * t_in, p0 + n * t_in, pp + n * t_in,
+        secs.append(mb.add([pm + n * t_edge, p0 + n * t_in, pp + n * t_edge,
                             pp + n * t_out - wdir * edge, p0 + n * t_out, pm + n * t_out + wdir * edge]))
     for a, b in zip(secs, secs[1:] + ([secs[0]] if closed else [])):
         mb.strip(a, b, closed=True)
@@ -556,7 +558,22 @@ def keeper(mb, o, t, b, n, wb, top, depth=0.006, lt=0.0042, th=0.0022):
     mb.quad(*secs[-1])
 
 
-def strap_set(ms, mr, smp, angles, closed, w, a_buckle, tail_dir, ext=None, t_in=0.0020, t_out=0.0058):
+def rivet(mb, o, n, r=0.0048, h=0.0024):
+    """Domed rivet head, 8-gon, all quads."""
+    n = n.normalized()
+    x = n.orthogonal().normalized()
+    y = n.cross(x)
+    rings = []
+    for rr, hh in ((r, -0.0008), (r, h * 0.35), (r * 0.72, h * 0.85), (r * 0.36, h)):
+        rings.append(mb.add([o + n * hh + (x * math.cos(TAU * k / 8) + y * math.sin(TAU * k / 8)) * rr
+                             for k in range(8)]))
+    for a, b in zip(rings, rings[1:]):
+        mb.strip(a, b, closed=True)
+    mb.f += lib._cap(rings[-1], mb.v)
+
+
+def strap_set(ms, mr, smp, angles, closed, w, a_buckle, tail_dir, ext=None, t_in=0.0020, t_out=0.0058,
+              t_edge=None, rivets=()):
     """One strap (+ tail, buckle, keeper) on the sampled surface."""
     frames = [smp.frame(a, w) for a in angles]
     if ext is not None:                                   # run the open ends down into the sole
@@ -564,7 +581,10 @@ def strap_set(ms, mr, smp, angles, closed, w, a_buckle, tail_dir, ext=None, t_in
             pts, n, t = frames[end]
             f = ([p + ext for p in pts], n, t)
             frames = [f] + frames if end == 0 else frames + [f]
-    band(ms, frames, t_in, t_out, closed)
+    band(ms, frames, t_in, t_out, closed, t_edge=t_edge)
+    for a in rivets:
+        pts, n, t = smp.frame(a, w)
+        rivet(mr, pts[1] + n * t_out, n)
     # local scale: metres per radian around the buckle
     per_rad = max((smp.hit(a_buckle + 0.05) - smp.hit(a_buckle - 0.05)).length / 0.1, 0.02)
     # tail: the free end lying on top of the strap, tapering to a blunt tip
@@ -598,7 +618,7 @@ def build_straps(upper):
     cx, cy = boot_c(zs)
     smp = Sampler(bvh, (cx, cy, zs), (1, 0, 0), (0, 1, 0))
     strap_set(ms, mr, smp, [TAU * k / NS + 1e-4 for k in range(NS)], True, 0.0205,
-              a_buckle=math.radians(-28.0), tail_dir=1.0)
+              a_buckle=math.radians(-28.0), tail_dir=1.0, rivets=[math.radians(a) for a in (63.0, 180.0)])
     # instep strap: arch over the ankle / instep in a forward-leaning plane, ends sunk into the sole welt
     bot = V((foot_cx(-0.022), -0.022, SOLE_T))
     top = V((foot_cx(-0.085), -0.085, 0.146))
@@ -609,7 +629,8 @@ def build_straps(upper):
     smp = Sampler(bvh, c, (1, 0, 0), d, a_range=(0.0, math.pi))
     n_seg = 26
     strap_set(ms, mr, smp, [math.pi * k / n_seg for k in range(n_seg + 1)], False, 0.0170,
-              a_buckle=math.radians(47.0), tail_dir=1.0, ext=-d * 0.017, t_in=0.0030, t_out=0.0066)
+              a_buckle=math.radians(47.0), tail_dir=1.0, ext=-d * 0.017, t_in=0.0030, t_out=0.0066,
+              t_edge=0.0009, rivets=[math.radians(a) for a in (13.0, 167.0)])
     return ms, mr
 
 
