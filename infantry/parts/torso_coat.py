@@ -154,6 +154,30 @@ def _neck_keys():
     return [_canon(k) for k in ks]
 
 
+OBSTACLE_W = 1.5
+SEAM_R1 = 0.028             # width of the armhole loop on top of the shoulder
+SEAM_ARCH = 0.006
+
+
+def _body_samples():
+    """Dense samples (points + outward normals) of the bare torso, used as an obstacle for the cloth."""
+    pts, nrm = [], []
+    dz = 0.004
+    zs = np.arange(1.20, 1.60 + 1e-9, dz)
+    for z in zs:
+        cy, rx, ry = spec.torso_section(float(z))
+        cy2, rx2, ry2 = spec.torso_section(float(min(z + dz, 1.60)))
+        cy1, rx1, ry1 = spec.torso_section(float(z - dz))
+        for k in range(96):
+            a = math.tau * k / 96
+            ca, sa = math.cos(a), math.sin(a)
+            pts.append((rx * ca, cy + ry * sa, z))
+            du = V((-rx * sa, ry * ca, 0.0))
+            dv = V(((rx2 - rx1) * ca, (cy2 - cy1) + (ry2 - ry1) * sa, 2 * dz if z + dz <= 1.60 else dz))
+            nrm.append(tuple(du.cross(dv).normalized()))
+    return np.array(pts), np.array(nrm)
+
+
 def _solve_core():
     index, faces = _core_topology()
     n = len(index)
@@ -175,6 +199,15 @@ def _solve_core():
             pin(("R0", side, i), p)
     for i, k in enumerate(_neck_keys()):
         pin(k, _neckline(math.radians(270.0 + 22.5 * i)))
+    # shoulder seam: gently arched straight line from the neck to the top of the armhole (padded shoulder)
+    for side in (1, -1):
+        a = _neckline(0.0 if side > 0 else math.pi)
+        b = spec.armhole_ring(16, side)[0]
+        r1 = b + (a - b).normalized() * SEAM_R1
+        for k in range(1, 5):
+            t = k / 4
+            p = a.lerp(r1, t) + V((0, 0, SEAM_ARCH * math.sin(math.pi * t * 0.85)))
+            pin(("F", 6, 26 + k) if side > 0 else ("F", 6, 22 - k), p)
 
     nbr = [set() for _ in range(n)]
     edge_faces = {}
@@ -202,8 +235,23 @@ def _solve_core():
                 rhs[r] -= wj * P[j]
             else:
                 A[r, col[j]] += wj
-    sol, *_ = np.linalg.lstsq(A, rhs, rcond=None)
-    P[free] = sol
+    # obstacle iterations: the cloth may never come closer to the bare body than the coat offset
+    body_p, body_n = _body_samples()
+    target = {}
+    for _ in range(12):
+        extra_a = np.zeros((len(target), len(free)))
+        extra_b = np.zeros((len(target), 3))
+        for r, (i, t) in enumerate(target.items()):
+            extra_a[r, col[i]] = OBSTACLE_W
+            extra_b[r] = OBSTACLE_W * t
+        sol, *_ = np.linalg.lstsq(np.vstack([A, extra_a]), np.vstack([rhs, extra_b]), rcond=None)
+        P[free] = sol
+        for i in free:
+            d = body_p - P[i]
+            k = int(np.argmin((d * d).sum(1)))
+            sd = float((P[i] - body_p[k]).dot(body_n[k]))
+            if sd < OFF + 0.002 or int(i) in target:
+                target[int(i)] = P[i] + (OFF + 0.002 - sd) * body_n[k] if sd < OFF + 0.002 else P[i].copy()
     return index, [V(p) for p in P], faces
 
 
@@ -219,7 +267,7 @@ def _check_armholes(ob):
     worst = 0.0
     for side in (1, -1):
         ring = spec.armhole_ring(16, side)
-        loop = [me.vertices[i].co for i in bverts if me.vertices[i].co.x * side > 0.15]
+        loop = [me.vertices[i].co for i in bverts if me.vertices[i].co.x * side > 0.15 and me.vertices[i].co.z > 1.2]
         assert len(loop) == 16, f"armhole loop side {side} has {len(loop)} boundary vertices, expected 16"
         for p in ring:
             worst = max(worst, min((q - p).length for q in loop))
@@ -396,13 +444,13 @@ def _collar():
         row = []
         for k in range(n_seg + 1):
             phi = 1.5 * math.pi + alpha + (math.tau - 2 * alpha) * k / n_seg
-            base = _neckline(phi, grow=0.004, dz=-0.012)
+            base = _neckline(phi, grow=-0.002, dz=-0.012)
             d = abs(math.degrees(phi) - 270.0 - (360.0 if math.degrees(phi) > 450.0 else 0.0))
             d = min(d, 360.0 - d)
             w = min(max((80.0 - d) / 40.0, 0.0), 1.0)
             w = w * w * (3 - 2 * w)
             top = V((top_rx * math.cos(phi), top_ry * math.sin(phi), top_z - 0.030 * w))
-            f = t ** 1.5
+            f = t ** 1.15
             row.append(V((base.x + (top.x - base.x) * f, base.y + (top.y - base.y) * f, base.z + (top.z - base.z) * t)))
         grid.append(row)
     outer, inner, faces = [], [], []

@@ -199,7 +199,7 @@ SL_T, SL_TRIM_H, SL_TRIM_W = 0.014, 0.005, 0.017
 
 
 def _sl_zc(u):                # crown height of the under surface
-    return 1.546 - 0.0108 * u - 0.0322 * u * u
+    return 1.540 - 0.0090 * u - 0.0300 * u * u
 
 
 def _sl_w(u):                 # half width (front-back) of the under surface
