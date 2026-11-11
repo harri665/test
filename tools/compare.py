@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import numpy as np  # noqa: E402
 from PIL import Image, ImageDraw, ImageFilter  # noqa: E402
 
-REF_BOX = {"FRONT": (190, 98, 530, 862), "SIDE": (540, 98, 738, 862), "BACK": (742, 98, 1040, 862)}
+REF_BOX = {"FRONT": (190, 98, 530, 862), "SIDE": (546, 98, 738, 862), "BACK": (742, 98, 1040, 862)}
 REGION = {  # y0, y1 (fractions of figure height from the top), half width (fraction of height)
     "full": (-0.01, 1.01, 0.27), "head": (-0.01, 0.20, 0.14), "torso": (0.10, 0.46, 0.24),
     "arms": (0.14, 0.62, 0.27), "waist": (0.30, 0.52, 0.22), "skirt": (0.38, 0.86, 0.26),
@@ -81,6 +81,16 @@ def our_image(view, parts, solid):
     return bg.convert("RGB"), np.asarray(rgba)[..., 3] > 40
 
 
+def our_frame(view):
+    """Frame from the spec (hat top -> ground, centre line x=0), so it is right even when only
+    some parts are built.  Must match render_views(full=True, res=(1100, 1500))."""
+    from infantry import spec
+    ppm = 1500 / 2.08
+    top = 750 - (spec.CLOTH["hat_crown_top_z"] - 0.98) * ppm
+    cx = 550 + (spec.HEAD_CENTER.y * ppm if view == "SIDE" else 0.0)
+    return top, spec.CLOTH["hat_crown_top_z"] * ppm, cx
+
+
 def crop_region(im, frame, region, out_h):
     top, H, cx = frame
     y0, y1, hw = REGION[region]
@@ -109,7 +119,7 @@ def main():
     a = ap.parse_args()
     rim, rmask = ref_image(a.view)
     oim, omask = our_image(a.view, a.parts, a.solid)
-    rf, of = figure_frame(rmask), figure_frame(omask)
+    rf, of = figure_frame(rmask), our_frame(a.view)
     y0, y1, _ = REGION[a.region]
     print(f"\nSILHOUETTE {a.view} / {a.region}   (half-widths as fraction of figure height; image-left, image-right)")
     print(f"{'height':>7s} {'ref L':>7s} {'ours L':>7s} {'ratio':>6s}   {'ref R':>7s} {'ours R':>7s} {'ratio':>6s}")
@@ -124,8 +134,8 @@ def main():
         print(f"{f:7.2f} {r[0]:7.3f} {o[0]:7.3f} {ql:6.2f}   {r[1]:7.3f} {o[1]:7.3f} {qr:6.2f}")
     if errs:
         print(f"mean silhouette error {100 * sum(errs) / len(errs):.1f}%   (target < 5%)")
-    print("note: when only some parts are built the figure frame (hat top -> sole) is wrong; build all parts"
-          " for trustworthy numbers.\n")
+    print("note: SIDE numbers on the back half between heights 0.35-0.60 are polluted by a neighbouring figure on"
+          " the sheet; trust the picture there.\n")
     h = 1100
     A, B = crop_region(rim, rf, a.region, h), crop_region(oim, of, a.region, h)
     sheet = Image.new("RGB", (A.width + B.width + 30, h + 36), (24, 24, 28))

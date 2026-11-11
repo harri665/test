@@ -69,3 +69,10 @@ relaxed A-pose. Paired parts are built on the left and mirrored with `lib.mirror
 * Even quad size (~2-3 cm on the body, ~1 cm on hands/face). No long slivers on deforming parts.
 * Cloth edges that are visible (hems, lapels, collar, brim) have real thickness (`lib.solidify`).
 * Each object carries `ob["topo"]` = `main` | `support` | `rigid` (legend colours in renders).
+
+## Round 2
+
+Round 1 delivered all six regions with clean topology but not the reference's look. The follow-up
+detail pass (re-measured proportions, reference comparison tool, per-region checklists) is specified
+in `docs/DETAIL_PASS.md`. Numbers in the sections above that disagree with `infantry/spec.py` v2 are
+superseded by the spec.
