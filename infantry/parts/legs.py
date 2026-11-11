@@ -145,7 +145,8 @@ LEG_ROWS = [(z, _thigh_r(z), 0.0) for z in _Z_TH] + [
     (0.3428, 0.0680, 0.0), (0.3388, 0.0600, 0.0), (0.326, 0.0587, 0.0), (0.308, 0.0580, 0.0),   # tuck into the boot
 ]
 _DIP = {0: 0.030, 1: 0.018, 2: 0.008}          # leg rings just under the crotch tilt down on the inside
-_SEAT = {0: 0.50, 1: 0.24, 2: 0.08}            # ... and keep some of the seat depth (front / back)
+_SEAT = {0: 0.50, 1: 0.24, 2: 0.08}
+_UNTWIST = {0: 0.55, 1: 0.85}            # ... and keep some of the seat depth (front / back)
 
 
 def _fold(th, z, r, side):
@@ -184,6 +185,7 @@ def _split_xy(i):
     rx = cx + _thigh_r(Z_SPLIT)
     ry = SPLIT_RY
     e = 2.0 / 2.4
+    ry *= 1.0 - 0.08 * abs(s) ** 10                   # centre front / back sit inside the seat line
     return (rx * math.copysign(abs(c) ** e, c), 0.001 + ry * math.copysign(abs(s) ** e, s),
             SPLIT_DIP * abs(s) ** 4)
 
@@ -228,12 +230,16 @@ def build_trousers():
         def pel(i):
             return split[i % NP] if side > 0 else split[(16 - i) % NP]
         ring = [pel(j) for j in range(0, 8)] + bridge + [pel(j) for j in range(25, 32)]
+        base = [mb.v[i].copy() for i in ring]
         for k, (z, r, dw) in enumerate(LEG_ROWS):
             pts = []
             for j in range(NL):
                 p = trouser_pt(z, r, TAU * j / NL, side, dip=_DIP.get(k, 0.0), droop=dw,
                                seat=_SEAT.get(k, 0.0))
-                pts.append(V((p.x * side, p.y, p.z)))
+                p = V((p.x * side, p.y, p.z))
+                w = _UNTWIST.get(k, 1.0)             # first rings keep part of the split ring's plan shape
+                p.x, p.y = _lerp(base[j].x, p.x, w), _lerp(base[j].y, p.y, w)
+                pts.append(p)
             new = mb.add(pts)
             mb.strip(ring, new, closed=True)
             ring = new
@@ -421,8 +427,8 @@ def build_upper():
 
 # ------------------------------------------------------------------ sole
 def _sole_w(y):
-    return _interp([(-0.150, 0.0640), (-0.110, 0.0645), (-0.070, 0.0622), (-0.030, 0.0605), (0.0, 0.0605),
-                    (0.035, 0.0610)], y)
+    return _interp([(-0.150, 0.0640), (-0.110, 0.0645), (-0.070, 0.0638), (-0.035, 0.0650), (0.0, 0.0645),
+                    (0.035, 0.0615)], y)
 
 
 def build_sole():
@@ -564,12 +570,13 @@ def rivet(mb, o, n, r=0.0048, h=0.0024):
     x = n.orthogonal().normalized()
     y = n.cross(x)
     rings = []
-    for rr, hh in ((r, -0.0008), (r, h * 0.35), (r * 0.72, h * 0.85), (r * 0.36, h)):
+    for rr, hh in ((r, -0.0008), (r * 0.80, h * 0.70), (r * 0.40, h)):
         rings.append(mb.add([o + n * hh + (x * math.cos(TAU * k / 8) + y * math.sin(TAU * k / 8)) * rr
                              for k in range(8)]))
     for a, b in zip(rings, rings[1:]):
         mb.strip(a, b, closed=True)
     mb.f += lib._cap(rings[-1], mb.v)
+    mb.f += [tuple(reversed(f)) for f in lib._cap(rings[0], mb.v)]
 
 
 def strap_set(ms, mr, smp, angles, closed, w, a_buckle, tail_dir, ext=None, t_in=0.0020, t_out=0.0058,
@@ -629,8 +636,8 @@ def build_straps(upper):
     smp = Sampler(bvh, c, (1, 0, 0), d, a_range=(0.0, math.pi))
     n_seg = 26
     strap_set(ms, mr, smp, [math.pi * k / n_seg for k in range(n_seg + 1)], False, 0.0170,
-              a_buckle=math.radians(47.0), tail_dir=1.0, ext=-d * 0.017, t_in=0.0030, t_out=0.0066,
-              t_edge=0.0009, rivets=[math.radians(a) for a in (13.0, 167.0)])
+              a_buckle=math.radians(47.0), tail_dir=1.0, ext=-d * 0.017, t_in=0.0036, t_out=0.0070,
+              t_edge=0.0024, rivets=[math.radians(a) for a in (13.0, 167.0)])
     return ms, mr
 
 

@@ -478,7 +478,7 @@ def _hose():
             _skirt_pt(TH_HOSE_END, 0.027, 0.950), _skirt_pt(TH_HOSE_END, 0.028, 1.020),
             _skirt_pt(TH_HOSE_END, 0.028, 1.062)]
     path = lib.smooth_path(ctrl, subdiv=6)
-    radii = [0.0125 if i % 2 == 0 else 0.0108 for i in range(len(path))]
+    radii = [0.0128 if i % 2 == 0 else 0.0104 for i in range(len(path))]
     hose = lib.lofted("hose_tube", lib.tube_rings(path, radii, n=8, x_hint=(0, 0, 1)),
                       cap_start=True, cap_end=True, topo="rigid", sharp_angle=60)
     parts = [hose]
