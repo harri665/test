@@ -145,7 +145,7 @@ LEG_ROWS = [(z, _thigh_r(z), 0.0) for z in _Z_TH] + [
     (0.3428, 0.0680, 0.0), (0.3388, 0.0600, 0.0), (0.326, 0.0587, 0.0), (0.308, 0.0580, 0.0),   # tuck into the boot
 ]
 _DIP = {0: 0.030, 1: 0.018, 2: 0.008}          # leg rings just under the crotch tilt down on the inside
-_SEAT = {0: 0.62, 1: 0.32, 2: 0.12}            # ... and keep some of the seat depth (front / back)
+_SEAT = {0: 0.50, 1: 0.24, 2: 0.08}            # ... and keep some of the seat depth (front / back)
 
 
 def _fold(th, z, r, side):
@@ -167,7 +167,7 @@ def trouser_pt(z, r, th, side=1, dr=0.0, dip=0.0, droop=0.0, seat=0.0):
     cy += 0.003 * wb                                  # ... and to the back
     x_out, x_in = cx + r, max(cx - r, GAP)
     ex, rx = 0.5 * (x_out + x_in), 0.5 * (x_out - x_in)
-    k = 1.0 + (_fold(th, z, r, side) + dr) / r
+    k = 1.0 + min(_fold(th, z, r, side), BLOUSE_R - 0.0055 - r) / r + dr / r
     x = max(ex + rx * math.cos(th) * k, GAP - 0.004)
     y = cy + (r + seat * (SPLIT_RY - _thigh_r(Z_SPLIT))) * math.sin(th) * k
     # roll droops unevenly over the boot top
@@ -184,7 +184,6 @@ def _split_xy(i):
     rx = cx + _thigh_r(Z_SPLIT)
     ry = SPLIT_RY
     e = 2.0 / 2.4
-    ry *= 1.0 - 0.10 * abs(s) ** 8                    # centre front / back start to curve under
     return (rx * math.copysign(abs(c) ** e, c), 0.001 + ry * math.copysign(abs(s) ** e, s),
             SPLIT_DIP * abs(s) ** 4)
 
@@ -321,13 +320,13 @@ FOOT = [
     (-0.114, -0.127, 0.1190, 0.0580, 0.0540, 52.0),
     (-0.132, -0.144, 0.1140, 0.0575, 0.0535, 53.0),
     (-0.150, -0.160, 0.1125, 0.0565, 0.0525, 54.0),
-    (-0.167, -0.176, 0.1095, 0.0540, 0.0500, 55.0),
-    (-0.182, -0.189, 0.1010, 0.0490, 0.0455, 56.0),
-    (-0.190, -0.1965, 0.0860, 0.0420, 0.0395, 57.0),
+    (-0.167, -0.176, 0.1085, 0.0540, 0.0500, 55.0),
+    (-0.182, -0.1885, 0.0990, 0.0490, 0.0455, 56.0),
+    (-0.190, -0.1960, 0.0830, 0.0420, 0.0395, 57.0),
 ]
 TOE_STEP = 0.0028                 # toe cap leather sits this far proud -> seam line
 FOOT_US = [(1, 0), (2, 0), (3, 0), (4, 0), (4.84, 0), (4.96, 1), (6, 1), (7, 1), (8, 1), (9, 1)]
-TOE_BULGE = 0.0045
+TOE_BULGE = 0.006
 
 
 def dome_ring(u, step=0):
@@ -470,11 +469,14 @@ def build_sole():
 class Sampler:
     """Ray-cast frames on the boot upper, in a plane through `c` spanned by x / d (b = across the strap)."""
 
-    def __init__(self, bvh, c, x, d):
+    def __init__(self, bvh, c, x, d, a_range=None):
         self.bvh, self.c, self.x, self.d = bvh, V(c), V(x).normalized(), V(d).normalized()
         self.b = self.x.cross(self.d).normalized()
+        self.a_range = a_range                       # open straps: never sample outside this
 
     def hit(self, a, b=0.0):
+        if self.a_range:
+            a = min(max(a, self.a_range[0]), self.a_range[1])
         u = self.x * math.cos(a) + self.d * math.sin(a)
         o = self.c + self.b * b
         loc = self.bvh.ray_cast(o + u * 0.5, -u)[0]
@@ -484,6 +486,8 @@ class Sampler:
         """-> ([p(-w), p(0), p(+w)], normal, tangent)"""
         u = self.x * math.cos(a) + self.d * math.sin(a)
         t = (self.hit(a + 0.06) - self.hit(a - 0.06)).normalized()
+        if t.length < 0.5:
+            t = self.d.cross(self.b) if abs(u.dot(self.x)) < 0.5 else self.d.copy()
         n = t.cross(self.b)
         if n.dot(u) < 0:
             n = -n
@@ -552,7 +556,7 @@ def keeper(mb, o, t, b, n, wb, top, depth=0.006, lt=0.0042, th=0.0022):
     mb.quad(*secs[-1])
 
 
-def strap_set(ms, mr, smp, angles, closed, w, a_buckle, tail_dir, ext=None, t_in=0.0012, t_out=0.0052):
+def strap_set(ms, mr, smp, angles, closed, w, a_buckle, tail_dir, ext=None, t_in=0.0020, t_out=0.0058):
     """One strap (+ tail, buckle, keeper) on the sampled surface."""
     frames = [smp.frame(a, w) for a in angles]
     if ext is not None:                                   # run the open ends down into the sole
@@ -593,7 +597,7 @@ def build_straps(upper):
     zs = 0.236
     cx, cy = boot_c(zs)
     smp = Sampler(bvh, (cx, cy, zs), (1, 0, 0), (0, 1, 0))
-    strap_set(ms, mr, smp, [TAU * k / 24 for k in range(24)], True, 0.0205,
+    strap_set(ms, mr, smp, [TAU * k / NS + 1e-4 for k in range(NS)], True, 0.0205,
               a_buckle=math.radians(-28.0), tail_dir=1.0)
     # instep strap: arch over the ankle / instep in a forward-leaning plane, ends sunk into the sole welt
     bot = V((foot_cx(-0.022), -0.022, SOLE_T))
@@ -602,10 +606,10 @@ def build_straps(upper):
     d.x = 0.0
     d.normalize()
     c = bot + d * 0.014
-    smp = Sampler(bvh, c, (1, 0, 0), d)
-    n_seg = 18
+    smp = Sampler(bvh, c, (1, 0, 0), d, a_range=(0.0, math.pi))
+    n_seg = 26
     strap_set(ms, mr, smp, [math.pi * k / n_seg for k in range(n_seg + 1)], False, 0.0170,
-              a_buckle=math.radians(47.0), tail_dir=1.0, ext=-d * 0.017)
+              a_buckle=math.radians(47.0), tail_dir=1.0, ext=-d * 0.017, t_in=0.0030, t_out=0.0066)
     return ms, mr
 
 

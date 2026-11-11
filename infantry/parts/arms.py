@@ -8,7 +8,7 @@ Objects per arm
     Sleeve_lower_L   main     elbow -> wrist, ends in a rolled, thick cuff
     Bracer_L         rigid    conical forearm cuff with thickness + raised rims
     Bracer_straps_L  rigid    2 strap bands + buckles
-    Bracer_studs_L   rigid    two rows of rivets on the outer half
+    Bracer_studs_L   rigid    two rows of rivets round the cuff
     Glove_cuff_L     main     thick flared glove cuff running up inside the sleeve cuff
     Wrist_L          support  3 tight loops at the wrist
     Hand_L           main     palm + 4 fingers + thumb, one welded all-quad mesh
@@ -26,7 +26,7 @@ S = spec
 CL = S.CLOTH
 TAU = math.tau
 NS = 16                                   # sleeve verts around
-NB = 24                                   # bracer verts around
+NB = 32                                   # bracer verts around
 D1 = (S.ELBOW - S.SHOULDER).normalized()
 D2 = (S.WRIST - S.ELBOW).normalized()
 LU = (S.ELBOW - S.SHOULDER).length        # upper arm length
@@ -103,8 +103,7 @@ class ArmPath:
         acc = [s_min]
         for i in range(1, len(pts)):
             acc.append(acc[-1] + (pts[i] - pts[i - 1]).length)
-        # the rounded corner is a hair shorter than the poly line: rescale the forearm part so
-        # that s = LU + LF still lands on the wrist
+        # (the rounded corner shortens the path by ~0.1 mm only, so s = LU + LF is the wrist)
         self.acc = acc
         self.frames = lib.frames_along(pts, x_hint=(1, 0, 0))   # (tangent, outer, front)
 
@@ -155,8 +154,10 @@ def clamp_to_coat(p, weight=1.0, gap=0.004):
     if abs(dy) >= 1.0:
         return p
     xlim = rx * math.sqrt(1.0 - dy * dy)
-    if p.x < xlim:
-        p = V((p.x + (xlim - p.x) * weight, p.y, p.z))
+    m = 0.012                                   # soft clamp: no hard crease where the push starts
+    if p.x < xlim + m:
+        x_new = xlim + m * math.exp((p.x - xlim) / m - 1.0)
+        p = V((p.x + (x_new - p.x) * weight, p.y, p.z))
     return p
 
 
@@ -183,17 +184,18 @@ def build_sleeve(path):
         tgt = TAU * i / NS
         cyl.append((a, r.length, tgt + ((phi - tgt + math.pi) % TAU - math.pi)))
 
-    KB = 7
+    KB = 8
     a_end = LU - 0.084
     upper = [[p.copy() for p in seam]]
     for k in range(1, KB + 1):
         x = k / KB
-        wr = 1.0 - (1.0 - x) ** 3.0
+        wr = 1.0 - (1.0 - x) ** 4.0             # reach the full sleeve radius early (rounded sleeve head)
         rg = []
         for i in range(NS):
             a0, rho0, phi0 = cyl[i]
-            a = a0 + (a_end - a0) * x
             phi_t = TAU * i / NS
+            # the top of the sleeve head leaves the seam slowly along the arm, the armpit evenly
+            a = a0 + (a_end - a0) * x ** (1.0 + 0.15 * (1.0 + math.cos(phi_t)))
             R = sleeve_R(max(a, 0.0)) + fold(a - LU, phi_t)
             rho = rho0 + (R - rho0) * wr
             phi = phi0 + (phi_t - phi0) * wr
@@ -208,8 +210,8 @@ def build_sleeve(path):
     s_c0 = LU + LF - 0.018                      # cuff roll starts right below the bracer
     n_low = 10
     lower = [ring(LU + 0.012 + (s_c0 - LU - 0.012) * i / n_low) for i in range(n_low + 1)]
-    for ds, off in ((0.0015, 0.0045), (0.005, 0.006), (0.0085, 0.0045), (0.010, 0.001),
-                    (0.010, -0.004), (0.004, -0.005), (-0.006, -0.005)):
+    for ds, off in ((0.0010, 0.0030), (0.0025, 0.0052), (0.0050, 0.0062), (0.0075, 0.0052), (0.0092, 0.0030),
+                    (0.0100, 0.0005), (0.0100, -0.0040), (0.0040, -0.0050), (-0.0060, -0.0050)):
         lower.append(ring(s_c0 + ds, off, folds=False))
 
     return [lib.lofted("Sleeve_upper_L", upper, topo="main", sharp_angle=70),
@@ -233,9 +235,11 @@ def build_bracer(path):
         return [c + (e1 * math.cos(TAU * j / n) + e2 * math.sin(TAU * j / n)) * r for j in range(n)]
 
     def surf(x, phi_deg, off=0.0):
+        """Point on the (conical) outer surface + true surface normal + direction along the surface."""
         c, t, e1, e2 = path.at(s0 + x)
-        nrm = e1 * math.cos(math.radians(phi_deg)) + e2 * math.sin(math.radians(phi_deg))
-        return c + nrm * (Rb(x) + off), nrm, t
+        rad = e1 * math.cos(math.radians(phi_deg)) + e2 * math.sin(math.radians(phi_deg))
+        slope = (Rb(x + 0.002) - Rb(x - 0.002)) / 0.004
+        return c + rad * (Rb(x) + off), (rad - t * slope).normalized(), (t + rad * slope).normalized()
 
     TH, bv = 0.005, 0.0018
     h, wr = 0.007, 0.020                          # top rim: height, width
@@ -261,10 +265,10 @@ def build_bracer(path):
         parts.append(obox(p + nrm * 0.0068, t, tg, nrm, 0.0150, 0.0016, 0.0016))
     straps = lib.mesh_object("Bracer_straps_L", *combine(parts), topo="rigid", sharp_angle=35)
 
-    # --- rivets: two rows on the outer half
+    # --- rivets: two rows right round the cuff (45 deg apart, one dead centre on the outer side)
     studs = []
     for fx, rad in ((0.235, 0.0125), (0.83, 0.0105)):
-        for k, ang in enumerate((-90.0, -45.0, 0.0, 45.0, 90.0)):
+        for k, ang in enumerate(45.0 * i for i in range(8)):
             p, nrm, t = surf(fx * Lb, ang, -0.0008)
             studs.append(lib.stud(f"bracer_stud_{fx}_{k}", radius=rad, height=rad * 0.5, n=12, loc=p, normal=nrm))
     studs = lib.join(studs, "Bracer_studs_L", topo="rigid")

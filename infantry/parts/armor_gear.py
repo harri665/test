@@ -1,8 +1,9 @@
 """Rigid hard-surface accessories: layered pauldrons, belt + buckle + keepers, pouches, hip canister + hose.
 
 Everything is derived from spec.py.  Layering used here (see docs/PLAN.md):
-    bare torso +0.028 coat  ->  +0.030..0.040 belt  ->  keepers / hangers +0.041..0.046
-    skirt surface (torso+0.034 at z=1.07 flaring to 0.36 x 0.30 at the hem) -> pouches +0.014, canister +0.014
+    bare torso +0.028 coat  ->  +0.030..0.040 belt (stitched rims +0.0018)  ->  keepers +0.043..0.048
+    skirt guide (torso+0.034 at z=1.07 flaring to 0.36 x 0.30 at the hem, +0.008 for overlapping
+    panels) -> strap hangers +0.008, pouches / canister +0.016, hose >= +0.015
     sleeve (arm radius + up to 0.030) -> pauldron inner surface >= +0.012 outside it
 
 Belt angle convention used in this file: theta = 0 at FRONT centre (-Y), +90 deg at the wearer's
@@ -303,9 +304,9 @@ BELT_RI = 0.030
 BELT_RIM = 0.0018
 BELT_N = 40
 
-TH_KEEPERS = [RAD(a) for a in (17, -17, 104, -98, 164, -164)]
-TH_RIVETS = [RAD(a) for a in (24.5, 30, -24.5, -30, 114, 122, -70, -78, -86, 174, 180, -174)]
-TH_POUCH_HIP = (RAD(43), RAD(73))
+TH_KEEPERS = [RAD(a) for a in (21, -21, 90, -90, 164, -164)]
+TH_RIVETS = [RAD(a) for a in (-27.5, -33, -62, -70, -78, 100, 108, 116, 174, 180, -174)]
+TH_POUCH_HIP = (RAD(37), RAD(65))
 TH_POUCH_BACK = (RAD(139), RAD(-139))
 TH_CANISTER = RAD(-45)
 TH_HOSE_END = RAD(-116)
@@ -340,7 +341,7 @@ def _keeper(name, th, w=0.020, hang=0.0):
         st.append((_belt_pt(th, ro + g, z0 + 0.004), _belt_pt(th, ro + g + t, z0 + 0.004)))
         for k in (0.5, 1.0):
             z = z0 - hang * k
-            st.append((_skirt_pt(th, 0.006, z), _skirt_pt(th, 0.011, z)))
+            st.append((_skirt_pt(th, 0.008, z), _skirt_pt(th, 0.013, z)))
     else:
         # under the bottom rim the wrap stays shallow: the skirt starts right below the belt
         bot = [((ro + g, z0 + 0.002), (ro + g + t, z0 - g - t + 0.002)),
@@ -395,7 +396,7 @@ def _buckle():
 
 # ============================================================================ pouches
 def _pouch(name, th, w=0.078, h=0.098, d=0.043):
-    fr = _hang_frame(th, BELT_Z0 + 0.004, BELT_Z0 + 0.004 - h, 0.014)
+    fr = _hang_frame(th, BELT_Z0 + 0.004, BELT_Z0 + 0.004 - h, 0.016)
     parts = []
     # body: boxy superellipse rings, bevelled bottom, all-quad caps
     n = 16
@@ -434,14 +435,14 @@ def _pouch(name, th, w=0.078, h=0.098, d=0.043):
     parts.append(fr.place(tab, (0.0, d + g + ft * 0.5 + 0.001, zt + 0.004)))
     parts.append(_rivet("pouch_stud", fr(0.0, d + g + ft * 0.5 + 0.005, zt + 0.002), fr.y, r=0.0055, h=0.0035))
     # hanger strap over the belt
-    parts.append(_keeper("pouch_hanger", th, w=0.030, hang=0.035))
+    parts.append(_keeper("pouch_hanger", th, w=0.030, hang=0.024))
     return lib.join(parts, name, topo="rigid")
 
 
 # ============================================================================ canister + hose
 CAN_R = 0.037
 CAN_TOP_Z = 1.020
-CAN_AXIS_OFF = CAN_R + 0.0038 + 0.014          # axis distance outside the skirt surface
+CAN_AXIS_OFF = CAN_R + 0.0038 + 0.016          # axis distance outside the skirt surface
 
 
 def _can_frame():
@@ -471,9 +472,9 @@ def _canister():
 def _hose():
     fr = _can_frame()
     a = fr(-0.010, CAN_AXIS_OFF, 0.0145)
-    ctrl = [a, fr(-0.036, CAN_AXIS_OFF + 0.002, 0.015), fr(-0.062, CAN_AXIS_OFF + 0.002, -0.010),
-            _skirt_pt(RAD(-70), 0.046, 0.915), _skirt_pt(RAD(-80), 0.038, 0.850),
-            _skirt_pt(RAD(-94), 0.032, 0.830), _skirt_pt(RAD(-108), 0.028, 0.870),
+    ctrl = [a, fr(-0.038, CAN_AXIS_OFF + 0.002, 0.015), fr(-0.072, CAN_AXIS_OFF + 0.006, -0.008),
+            _skirt_pt(RAD(-68), 0.062, 0.925), _skirt_pt(RAD(-77), 0.058, 0.845),
+            _skirt_pt(RAD(-91), 0.040, 0.790), _skirt_pt(RAD(-107), 0.029, 0.845),
             _skirt_pt(TH_HOSE_END, 0.027, 0.950), _skirt_pt(TH_HOSE_END, 0.028, 1.020),
             _skirt_pt(TH_HOSE_END, 0.028, 1.062)]
     path = lib.smooth_path(ctrl, subdiv=6)
