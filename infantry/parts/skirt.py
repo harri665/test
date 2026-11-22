@@ -43,13 +43,14 @@ SIL_TOP = (BELT_LO, 0.133)          # FRONT/BACK outline is a straight A-line fr
                                     # ... to (skirt_hem_z, skirt_hem_rx)
 SEAM_X = 0.0035                     # front panels meet edge to edge above the slit (under the buckle)
 BACK_TIP_Z = Z_TIP - 0.040          # back view: back tips hang ~4 cm lower than the front tips
-FRONT_CORNER = (0.245, 0.510)       # front view: front panel outer corner (x, z) ...
-FRONT_OUT_SLOPE, FRONT_OUT_MIN = 0.35, 0.070   # ... its outer edge climbs inward (x 0.11 at z 0.9)
+FRONT_CORNER = (0.250, 0.510)       # front view: front panel outer corner (x, z) ...
+FRONT_OUT_SLOPE, FRONT_OUT_MIN = 0.30, 0.070   # ... its outer edge climbs inward (x 0.11 at z 0.9)
 BACK_OUT_X, BACK_CORNER_Z = 0.175, 0.410      # back view: back panels reach x 0.175, corner z 0.41
-A_OVERLAP_F, A_BACK_X = 0.025, 0.150          # layer A laps 2.5 cm over the front panel; back edge x 0.15
-SIDE_A = dict(tip=5.0, tip_z=0.420, front_z=0.600, back_z=0.580, top=Z_TOP)   # pointed at the side
-SIDE_B = dict(front=322.0, back=58.0, tip=10.0, tip_z=0.335, front_z=0.470, back_z=0.460, top=0.720)
-A_LIFT = (0.004, 0.012)             # layer A over the panels: inside the belt zone / below it
+A_OVERLAP_F, A_BACK_X = 0.020, 0.150          # layer A laps 2.5 cm over the front panel; back edge x 0.15
+SIDE_A = dict(tip=14.0, tip_z=0.420, front_z=0.600, back_z=0.580, top=Z_TOP)   # pointed at the side
+SIDE_B = dict(front=322.0, back=58.0, tip=18.0, tip_z=0.335, front_z=0.470, back_z=0.460, top=0.720)
+A_LIFT = (0.004, 0.012, 0.012)      # layer A over the panels: in the belt zone / below / extra flare
+                                    # (front view: the side flap stands off the body below z 0.75)
 B_LIFT = -0.012                     # layer B sits under the front / back panels
 FOLD_AMP, FOLD_COUNT, FOLD_SEED = 0.008, 8.0, 0.37
 # trim: wide border + piping (profile across the edge, s = inward from the cloth edge, h = off the cloth)
@@ -57,7 +58,7 @@ T_OVER, T_RISE, T_UNDER = 0.003, 0.003, 0.006
 T_PROFILE = [(-T_OVER, -T_UNDER), (-T_OVER, T_RISE), (0.030, T_RISE), (0.034, 0.0009),
              (0.039, 0.0020), (0.044, 0.0008), (0.044, -0.0020), (0.014, -T_UNDER)]
 # emblems: (x, z, half width, tilt deg) -- front ones lean toward the panel tip like the reference
-EMB_FRONT = (0.165, 0.590, 0.045, -12.0)
+EMB_FRONT = (0.168, 0.590, 0.045, -28.0)
 EMB_BACK = (0.092, 0.500, 0.042, 0.0)
 EMB_VENT = (0.0, VENT_TOP - 0.075, 0.028, 0.0)
 # under skirt (box pleats)
@@ -96,8 +97,9 @@ def _bare(z):
 _TOP_B = _bare(Z_TOP)
 
 
-def _a_lift(z):
-    return A_LIFT[0] + (A_LIFT[1] - A_LIFT[0]) * _sstep(BELT_LO + 0.005, BELT_LO - 0.055, z)
+def _a_lift(z, flare=True):
+    return (A_LIFT[0] + (A_LIFT[1] - A_LIFT[0]) * _sstep(BELT_LO + 0.005, BELT_LO - 0.055, z)
+            + (A_LIFT[2] * _sstep(1.0, 0.72, z) if flare else 0.0))
 
 
 def _sil_rx(z):
@@ -108,11 +110,11 @@ def _sil_rx(z):
 def section(z, kind="coat"):
     """(cy, rx, ry_front, ry_back) of the base coat surface (or the under skirt) at height z."""
     cy, bx, by = _bare(z)
-    ze = max(z, Z_TOP - 1.15 * (Z_TOP - Z_HEM))          # stop flaring a little below the hem
+    ze = max(z, Z_TOP - 1.06 * (Z_TOP - Z_HEM))          # stop flaring a little below the hem
     t = (Z_TOP - ze) / (Z_TOP - Z_HEM)
     off = OFF - 0.002 * _sstep(1.17, 1.08, z)            # 2 mm tighter over the hips (reference outline)
     tx, ty = _TOP_B[1] + OFF, _TOP_B[2] + OFF
-    rx = _smax(bx + off, max(tx, _sil_rx(ze) - _a_lift(ze)))
+    rx = _smax(bx + off, max(tx, _sil_rx(ze) - _a_lift(ze, False)))
     ryf = _smax(by + off, ty + (HEM_RY - ty) * t)
     ryb = _smax(by + off, ty + (HEM_RYB - ty) * t)
     if kind == "under":

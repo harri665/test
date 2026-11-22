@@ -568,23 +568,45 @@ def ring_on(bvh, c, z, angles, lift):
     return out
 
 
+def _core(p):
+    """Foot / shaft 'core' point used to aim rays at the boot from outside."""
+    w = _sstep((p.z - 0.12) / 0.05)
+    return V((0.0, p.y, 0.062)).lerp(V((0.0, SY, p.z)), w)
+
+
+def _surf_normal(bvh, p, d, r=0.010):
+    """Averaged surface normal around p (5 parallel rays along -d) -> smooth, outward."""
+    e1 = d.orthogonal().normalized()
+    e2 = d.cross(e1)
+    acc = V()
+    for o in (V(), e1 * r, -e1 * r, e2 * r, -e2 * r):
+        hit = bvh.ray_cast(p + o + d * 0.12, -d)
+        if hit[0] is not None:
+            n = hit[1] if hit[1].dot(d) > 0 else -hit[1]
+            acc += n
+    return acc.normalized() if acc.length > 1e-6 else d
+
+
 def path_cast(bvh, pts, lift, subdiv=3, bridge=1):
-    """Lay a local poly line onto the boot: each point is pushed along the outward direction from the
-    foot's core until it meets the outermost surface.  Normals come from that core direction (smooth, so
-    straps never twist) and heights are max-filtered so a strap bridges over edges instead of stepping."""
+    """Lay a local poly line onto the boot: each point is pushed out from the foot's core until it meets
+    the outermost surface.  Normals are area-averaged and smoothed along the path (straps never twist),
+    heights are max-filtered so a strap bridges over edges instead of stepping down."""
     raw = []
     for p in lib.smooth_path(pts, subdiv):
         p = V(p)
-        n = (p - V((0.0, p.y, 0.062))).normalized()
-        hit = bvh.ray_cast(p + n * 0.12, -n)
-        h = (hit[0] - p).dot(n) if hit[0] is not None else 0.0
-        raw.append([p, n, h])
-    out = []
-    for i, (p, n, h) in enumerate(raw):
-        hb = max(raw[k][2] for k in range(max(i - bridge, 0), min(i + bridge + 1, len(raw))))
-        ns = sum((raw[k][1] for k in range(max(i - 2, 0), min(i + 3, len(raw)))), V()).normalized()
-        out.append((p + n * (hb + lift), ns))
-    return out
+        d = (p - _core(p)).normalized()
+        hit = bvh.ray_cast(p + d * 0.12, -d)
+        q = hit[0] if hit[0] is not None else p
+        raw.append([q, _surf_normal(bvh, q, d)])
+    ns = [sum((raw[k][1] for k in range(max(i - 2, 0), min(i + 3, len(raw)))), V()).normalized()
+          for i in range(len(raw))]
+    hs = []
+    for i, (q, _n) in enumerate(raw):
+        h = 0.0
+        for k in range(max(i - bridge, 0), min(i + bridge + 1, len(raw))):
+            h = max(h, (raw[k][0] - q).dot(ns[i]))
+        hs.append(h)
+    return [(q + n * (h + lift), n) for (q, _), n, h in zip(raw, ns, hs)]
 
 
 def path_on(bvh, pts, lift, subdiv=3):
@@ -675,14 +697,14 @@ def build_straps(upper):
     objs = []
     # ---- tongue / lace panel down the instep, from under the cuff strap to the toe-cap seam
     bvh = _bvh([upper])
-    tongue_pts = [(0.0, -0.040, 0.205), (0.0, -0.052, 0.170), (0.0, -0.068, 0.140), (0.0, -0.088, 0.119),
-                  (0.0, -0.108, 0.107), (0.0, -0.128, 0.101)]
+    tongue_pts = [(0.0, -0.050, 0.158), (0.0, -0.060, 0.145), (0.0, -0.072, 0.131), (0.0, -0.090, 0.118),
+                  (0.0, -0.108, 0.109), (0.0, -0.128, 0.104)]
     tongue = path_cast(bvh, tongue_pts, 0.0008, subdiv=2, bridge=0)
     objs.append(strap("tongue", tongue, 0.046, 0.0032))
     tm = _mb_from(objs[-1])
     # lace bars across the tongue
     bvh_t = _bvh([upper, tm])
-    for i in (3, 5, 9):
+    for i in (2, 4, 9):
         p, t, b, n = frame_at(tongue, i)
         bar = path_cast(bvh_t, [p - b * 0.027, p, p + b * 0.027], 0.0006, subdiv=2, bridge=0)
         objs.append(strap("lace", bar, 0.006, 0.0022))
