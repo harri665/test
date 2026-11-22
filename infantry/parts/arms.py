@@ -55,7 +55,7 @@ SEAM_PHI_INDEX = 2                        # lengthwise seam runs along sleeve ve
 # front_arm_*, side_arm, side_skirt: a flared FABRIC turn-back cuff over the forearm: thin hem at the
 # top (edge rises toward the outer side), thick rounded fold at the wrist end, 2x2 rivets on the front
 # face, no strap.  The cuff is cloth (topo main); only the rivets are rigid.
-BRACER_R = (0.075, 0.055)                 # outer radius at the elbow end / wrist end
+BRACER_R = (0.078, 0.057)                 # outer radius at the elbow end / wrist end
 BRACER_TH = 0.005                         # double cloth layer (turned back)
 BRACER_TOP_DROP = 0.0                     # 0: hem square to the forearm, so its outer side is already higher
 RIM_TOP = (0.012, 0.0045)                 # top hem (width along the arm, bulge above the cuff)
@@ -182,7 +182,7 @@ def sleeve_R(s):
 
 def sleeve_k(s):
     """(lateral, front-back) radius factors: the upper sleeve is a little flatter seen from the front."""
-    kx = keyf(t_of(s), [(0.0, UPPER_FLAT), (0.55, UPPER_FLAT), (0.95, 1.0)])
+    kx = keyf(t_of(s), [(0.0, UPPER_FLAT), (0.80, UPPER_FLAT), (1.02, 1.0)])
     return kx, 1.0 + (1.0 - kx) * 0.6
 
 

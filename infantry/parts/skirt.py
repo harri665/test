@@ -51,13 +51,13 @@ A_GAP_F, FRONT_UNDER_A, A_BACK_X = 0.003, 0.025, 0.150   # layer A starts at the
                                     # border (double border line); the front panel runs on under it; A back edge x 0.15
 # front closure (review + spec v3): the wearer's right panel laps over the left for ~10 cm under the
 # belt, buttoned twice, then its edge swings into the inverted V
-LAP_X, LAP_LIFT, LAP_CUT = 0.035, 0.011, (1.118, 1.062)
+LAP_X, LAP_LIFT, LAP_CUT = 0.035, 0.013, (1.118, 1.062)
 UNDER_EDGE_X = 0.008                # left panel's hidden edge under the lap
 BUTTONS = [(0.014, 1.160), (0.014, 1.112)]     # (x, z) on the lap, final coordinates
 BUTTON_R = 0.012
 # side layers: side view hems run front-high -> back-low (all of them)
-SIDE_A = dict(tip=40.0, tip_z=0.420, front_z=0.515, back_z=0.470, top=Z_TOP)
-SIDE_B = dict(front=322.0, back=58.0, tip=48.0, tip_z=0.335, front_z=0.500, back_z=0.380, top=0.720)
+SIDE_A = dict(tip=30.0, tip_z=0.420, front_z=0.515, back_z=0.470, top=Z_TOP)
+SIDE_B = dict(front=322.0, back=58.0, tip=25.0, tip_z=0.335, front_z=0.500, back_z=0.380, top=0.720)
 HIP_TIER, TIER_FRONT_A, TIER_BACK_X = C["hip_tier"], 352.0, 0.125   # hip-length upper tier over sides +
                                     # back (side_skirt / back_torso refs): front end at the side, tail at the back
 A_LIFT = (0.001, 0.012, 0.014)      # layer A over the panels: in the belt zone / below / extra flare
@@ -90,13 +90,14 @@ TROUSER_ENV = [(1.20, 0.119, -0.105, 0.105), (1.15, 0.131, -0.109, 0.113), (1.10
                (0.65, 0.217, -0.100, 0.085), (0.60, 0.217, -0.087, 0.086), (0.55, 0.218, -0.086, 0.085),
                (0.50, 0.224, -0.082, 0.091), (0.45, 0.236, -0.079, 0.111), (0.42, 0.243, -0.073, 0.121),
                (0.40, 0.248, -0.070, 0.127), (0.38, 0.253, -0.067, 0.131), (0.35, 0.257, -0.062, 0.139),
-               (0.32, 0.257, -0.058, 0.143), (0.30, 0.255, -0.053, 0.142), (0.29, 0.253, -0.049, 0.139)]
+               (0.32, 0.257, -0.058, 0.143), (0.30, 0.253, -0.051, 0.138), (0.29, 0.245, -0.043, 0.108),
+               (0.28, 0.221, -0.046, 0.096)]
 U_CLEAR, COAT_OVER_UNDER, B_GAP = 0.008, 0.010, 0.024   # B_GAP: room for layer B at the sides
 
 NR_FRONT, NC_FRONT = 27, 7
 NR_BACK, NC_BACK = 28, 7
 NR_A, NC_A_FRONT, NC_A_BACK = 25, 9, 4
-NR_B, NC_B_FRONT, NC_B_BACK = 12, 10, 3
+NR_B, NC_B_FRONT, NC_B_BACK = 12, 9, 4
 NR_TIER, NC_TIER = 14, 9
 NR_UNDER = 14
 
@@ -730,9 +731,8 @@ def build():
     # front: the left panel lies under, the right one (built on +X, mirrored) laps over it
     fu = front_panel(over=False)
     fo = front_panel(over=True)
-    k0 = next(k for k in range(fu.nr + 1) if fu.Q[k][0][1] <= LAP_CUT[0] - 0.012)
     f_l = _sheet("skirt_front_L", fu)
-    ft_l = _trim("skirt_front_trim_L", fu, [p for p in _path_main(fu, fu.nr + 1) if not (p[1] == 0 and p[0] < k0)])
+    ft_l = _trim("skirt_front_trim_L", fu, _path_main(fu, fu.nr + 1))    # runs up beside the lap
     f_r = _sheet("skirt_front_R", fo)
     ft_r = _trim("skirt_front_trim_R", fo, _path_main(fo, fo.nr + 1))
     btn = [_button(f"skirt_button_{i}", fo, x, z) for i, (x, z) in enumerate(BUTTONS)]
