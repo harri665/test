@@ -39,19 +39,24 @@ E2F = D2.cross(E1F).normalized()                         # front
 # ---------------------------------------------------------------- shape (read from the reference)
 NB = 24                     # verts around (~1.5-2 cm columns like the reference wireframe)
 R_TOP, R_LOW = 0.0790, 0.0585   # body radius at the top edge / just above the wrist band
+FB_FLARE = 0.06             # extra front/back opening at the top edge
 FLARE = 1.35                # >1: the flare opens faster toward the top (slightly bell-shaped)
 TH = 0.0050                 # double cloth layer
 LIP = 0.0032                # rolled top lip + hem band stand this much proud of the body
 HEM_W = 0.0125              # hem band width (top edge -> small step onto the body)
 TOP_LIFT = 0.030            # top edge rides up the arm by up to this much ...
-TOP_LIFT_PHI = 300.0        # ... centred on the outer-back side -> outer side clearly higher
-TOP_DROP = 0.0040           # whole top edge moved this much down the arm (keeps top at z ~1.21)
+TOP_LIFT_PHI = 285.0        # ... centred on the outer-back side -> outer side clearly higher
+TOP_DROP = 0.0060           # whole top edge moved this much down the arm (keeps top at z ~1.21)
 INNER_DEPTH = 0.032         # inner wall depth below the top edge (sleeve hides the rest)
 
 BAND_H = 0.0225             # wrist band height along the arm
 BAND_DROP = 0.0025          # band's rolled lower edge reaches this far past LB
 BAND_PROUD = 0.0055         # band outer surface above the body
-BAND_IN = 0.0540            # band inner wall radius (glove cuff tucks in under it)
+BAND_IN = 0.0540            # nominal band inner radius (profile reference)
+# the glove cuff (arms.Glove_cuff_L) is not concentric with the forearm axis: it measures r 0.041 (inner
+# side) .. 0.049 (front) here, so the band's inner wall is an ellipse ~4.5 mm outside it -> no dark gap
+BAND_IN_C = (0.0018, 0.0013)        # ellipse centre offset (outer, front)
+BAND_IN_AB = (0.0482, 0.0528)       # ellipse semi axes (outer-inner, front-back)
 
 RIVET_R, RIVET_H = 0.0140, 0.0062
 RIVET_PHI = (50.0, -6.0)    # columns: front-outer and outer (side crop: both visible from the side)
@@ -69,19 +74,29 @@ def _s(phi_deg):
     return math.radians(phi_deg % 360.0) * RS
 
 
-FOLDS = [
-    dict(pts=[(_s(18), 0.020), (_s(14), 0.090), (_s(20), 0.168)], amp=0.0026, width=0.019, sharp=0.45),
-    dict(pts=[(_s(100), 0.018), (_s(106), 0.095), (_s(98), 0.170)], amp=0.0034, width=0.021, sharp=0.5),
-    dict(pts=[(_s(148), 0.018), (_s(142), 0.110), (_s(146), 0.168)], amp=0.0030, width=0.020, sharp=0.5),
-    dict(pts=[(_s(208), 0.020), (_s(214), 0.100), (_s(206), 0.168)], amp=0.0030, width=0.021, sharp=0.5),
-    dict(pts=[(_s(262), 0.018), (_s(256), 0.090), (_s(266), 0.168)], amp=0.0034, width=0.020, sharp=0.5),
-    dict(pts=[(_s(318), 0.018), (_s(312), 0.075), (_s(316), 0.130)], amp=0.0024, width=0.018, sharp=0.45),
+FOLDS = [   # crests sit on / near column lines (every 15 deg) so they do not alias on the 24-column grid
+    dict(pts=[(_s(24), 0.026), (_s(21), 0.090), (_s(25), 0.158)], amp=0.0030, width=0.016, sharp=0.6),
+    dict(pts=[(_s(102), 0.016), (_s(107), 0.095), (_s(101), 0.170)], amp=0.0042, width=0.018, sharp=0.75),
+    dict(pts=[(_s(152), 0.016), (_s(147), 0.110), (_s(151), 0.168)], amp=0.0038, width=0.018, sharp=0.75),
+    dict(pts=[(_s(208), 0.018), (_s(213), 0.100), (_s(207), 0.168)], amp=0.0038, width=0.018, sharp=0.75),
+    dict(pts=[(_s(258), 0.016), (_s(253), 0.090), (_s(259), 0.168)], amp=0.0042, width=0.018, sharp=0.75),
+    dict(pts=[(_s(316), 0.016), (_s(313), 0.075), (_s(316), 0.135)], amp=0.0030, width=0.016, sharp=0.6),
+    dict(pts=[(_s(127), 0.026), (_s(129), 0.095)], amp=-0.0025, width=0.015, sharp=0.5),     # creases
+    dict(pts=[(_s(232), 0.026), (_s(230), 0.105)], amp=-0.0025, width=0.015, sharp=0.5),
+    dict(pts=[(_s(75), 0.024), (_s(77), 0.080)], amp=-0.0020, width=0.014, sharp=0.5),
 ]
 
 
 # ---------------------------------------------------------------- surface
-def body_R(x):
-    """Body radius (no folds) at distance x down the forearm."""
+def body_R(x, phi_deg=90.0):
+    """Body radius (no folds) at distance x down the forearm; the top also opens a little more
+    front/back than sideways (side reference: the cuff mouth is wide seen from the side)."""
+    lo0 = LB - BAND_H
+    fb = 1.0 + FB_FLARE * math.sin(math.radians(phi_deg)) ** 2 * max(0.0, 1.0 - x / (0.75 * lo0)) ** 1.5
+    return fb * _body_R(x)
+
+
+def _body_R(x):
     lo = LB - BAND_H
     t = min(max(x / lo, -0.25), 1.0)
     if t >= 0:
@@ -117,7 +132,7 @@ def radial(phi_deg):
 def body_pt(x, phi_deg, off=0.0, folds=True):
     """Point on the cuff body; x is the unsheared parameter, off is radial offset."""
     xs = x + shear(x, phi_deg)
-    r = body_R(xs) + off + (fold(x, phi_deg) if folds else 0.0)
+    r = body_R(xs, phi_deg) + off + (fold(x, phi_deg) if folds else 0.0)
     return axis_pt(xs) + radial(phi_deg) * r
 
 
@@ -173,20 +188,26 @@ def build_band():
     # edge -> seam just under the body surface
     prof = [
         lambda: (LB - 0.010, BAND_IN),                                  # inner wall (glove cuff covers it)
-        lambda: (LB - 0.0005, BAND_IN),
-        lambda: (bot - 0.0003, BAND_IN + 0.0032),                       # rolled lower edge
-        lambda: (bot - 0.0012, rout(bot) - 0.0022),
-        lambda: (LB - 0.0030, rout(LB - 0.0030)),                       # edge loop
-        lambda: (LB - 0.0112, rout(LB - 0.0112) + 0.0009),              # slightly convex roll
-        lambda: (top + 0.0030, rout(top + 0.0030)),                     # edge loop
-        lambda: (top + 0.0003, rout(top) - 0.0026),                     # rounded top edge
-        lambda: (top - 0.0003, None),                                   # seam into the body
+        lambda: (bot - 0.0009, BAND_IN),
+        lambda: (bot, BAND_IN + 0.0024),                                # flat underside
+        lambda: (bot, rout(bot) - 0.0026),
+        lambda: (bot - 0.0026, rout(bot - 0.0026)),                     # lower edge loop (45 deg bevel)
+        lambda: (LB - 0.0105, rout(LB - 0.0105) + 0.0005),              # outer face, very slightly full
+        lambda: (top + 0.0024, rout(top + 0.0024)),                     # upper edge loop
+        lambda: (top, rout(top) - 0.0024),                              # top face
+        lambda: (top - 0.0003, None),                                   # crisp seam into the body
     ]
     rings = []
-    for f in prof:
+    for k, f in enumerate(prof):
         x, r = f()
         ring = []
         for ph in phis():
+            if k < 3:        # inner wall + inner edge of the underside: ellipse hugging the glove cuff
+                d = r - BAND_IN
+                a = math.radians(ph)
+                ring.append(axis_pt(x) + E1F * (BAND_IN_C[0] + (BAND_IN_AB[0] + d) * math.cos(a))
+                            + E2F * (BAND_IN_C[1] + (BAND_IN_AB[1] + d) * math.sin(a)))
+                continue
             rr = r if r is not None else body_R(x) - 0.0016
             ring.append(axis_pt(x) + radial(ph) * rr)
         rings.append(ring)
@@ -220,7 +241,7 @@ def rivet_deco(name, loc, normal, up):
         (0.97, 0.52, 0.0),
         (0.84, 0.72, 0.0),       # rim top
         (0.70, 0.42, 0.0),       # groove inside the rim
-        (0.52, 0.80, 0.22),      # rosette petals (radius + height modulated)
+        (0.52, 0.80, 0.21),      # rosette petals (radius + height modulated)
     ]
     rings = []
     for rf, hf, pet in prof:
@@ -238,7 +259,7 @@ def rivet_deco(name, loc, normal, up):
     for i in range(k0, len(vs)):
         d = math.hypot(vs[i].x, vs[i].y) / (R * 0.52)
         vs[i] = V((vs[i].x, vs[i].y, H * (0.80 + 0.22 * max(0.0, 1.0 - d * d))))
-    ob = lib.mesh_object(name, vs, fs, topo="rigid", sharp_angle=35)
+    ob = lib.mesh_object(name, vs, fs, topo="rigid", sharp_angle=40)
     nz = V(normal).normalized()
     u = V(up)
     u = (u - nz * u.dot(nz)).normalized()
@@ -246,7 +267,7 @@ def rivet_deco(name, loc, normal, up):
     from mathutils import Matrix
     ob.data.transform(Matrix.Translation(V(loc)) @ Matrix((xax, u, nz)).transposed().to_4x4())
     ob.data.update()
-    return lib.finalize(ob, sharp_angle=35)
+    return lib.finalize(ob, sharp_angle=40)
 
 
 def build_rivets():

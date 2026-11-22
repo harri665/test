@@ -51,10 +51,6 @@ SEAM_PHI_INDEX = 2                        # lengthwise seam runs along sleeve ve
 NS2 = 32                                  # sleeve verts around below the 16 -> 32 transition band
 KB = 12                                   # blend rings: tilted armhole seam -> rings square to the arm
 A_END = 0.165                             # ... reaching square rings this far down the upper arm
-ROW_UPPER = 0.0100                        # row spacing from A_END to the elbow pit folds
-ROW_ELBOW = 0.0075                        # row spacing through the elbow / above the cuff
-P_ARC = TAU * 0.066                       # unrolled sleeve circumference for the fold map (s wraps)
-ROW_SAG = 0.006                           # elbow rows (and the folds riding on them) sag at the front
 AXIS_LIM = 0.0205                         # upper sleeve stays within arm radius + this (< 0.022) above z 1.36
 # front_arm_*, side_arm, side_skirt: a flared FABRIC turn-back cuff over the forearm: thin hem at the
 # top (edge rises toward the outer side), thick rounded fold at the wrist end, 2x2 rivets on the front
@@ -209,77 +205,69 @@ def clamp_to_coat(p, weight=1.0, gap=0.004):
 
 
 # ------------------------------------------------------------------ sleeve wrinkles
-def _arc(phi):
-    """Angle around the sleeve -> arc length on the unrolled sleeve (0 = outer side, wraps at P_ARC)."""
-    return P_ARC * (phi % TAU) / TAU
+class Fold:
+    """One stylised sleeve fold (callout_elbow / front_arm_* / side_arm): a band wrapping the whole
+    sleeve that rises as a broad rounded roll, steps OUT by `amp` at a crisp crest and tucks back in
+    to a tight crease just below it.  The fold plane is tilted: it sits `tilt` lower (further down the
+    arm) on the inside of the elbow (FOLD_LOW_DEG) than on the back-outer side.
+    l = crest position (nominal distance from the shoulder, on the high side), widths in metres."""
+
+    def __init__(self, l, amp, tilt, rise, drop, back, crease=0.22):
+        self.l, self.amp, self.tilt, self.rise, self.drop, self.back, self.crease = l, amp, tilt, rise, drop, back, crease
+
+    def rows(self):
+        """Edge loops of the fold -> [(u, height)], u = offset from the crest down the arm, height in
+        units of amp.  Loops bunch at the crest (support loop either side) and the crease."""
+        W, D, B = self.rise, self.drop, self.back
+        return [(-W, 0.0), (-0.52 * W, 1.0 - 0.48 ** 2), (-0.0045, 0.985), (0.0, 1.0),
+                (0.42 * D, 0.72), (D, -self.crease), (D + B, 0.0)]
 
 
-def _ph(deg):
-    return P_ARC * (deg % 360.0) / 360.0
+FOLD_LOW_DEG = 140.0                      # folds sag lowest here (front-inner: the elbow pit)
+# sleeve_front_*.png: between the shoulder armour and the cuff only two big folds: the big one half way
+# down the visible sleeve (just above the elbow), the second ~3/4 of the way, then a short clean
+# stretch into the cuff; above them the upper arm is a clean straight column.
+FOLDS = [Fold(0.244, 0.0130, 0.012, 0.030, 0.0070, 0.0120),      # the big elbow fold
+         Fold(0.281, 0.0105, 0.010, 0.018, 0.0060, 0.0110)]      # second fold, between elbow and cuff
+ROW_GAP = 0.016                           # max row spacing on the clean stretches between folds
 
 
-def sleeve_ridges():
-    """All sleeve folds in (s = arc around, l = nominal distance along the arm from the shoulder).
-    Elbow rows sag ROW_SAG at the front, and folds laid along constant l ride on those rows.
-    Style: rounded crests with narrow, crisp creases between them (callout_elbow.png)."""
-    R = []
-    # 1. elbow pit: 4 compression zig-zags stacked on the front-inner side (peak ~125 deg), fading
-    #    toward the outer side and toward the back, with a crisp crease under each crest
-    zz = lib.zigzag_ridges(_ph(45), _ph(205), LU - 0.128, LU - 0.044, 4, amp=0.0095, width=0.0140,
-                           sharp=0.5, seed=0.7)
-    R += zz
-    for r0, r1 in zip(zz, zz[1:]):
-        R.append(dict(pts=[((p[0] + q[0]) / 2, (p[1] + q[1]) / 2) for p, q in zip(r0["pts"], r1["pts"])],
-                      amp=-0.0045, width=0.0075, sharp=0.8))
-    # outer elbow: two short arched folds where the cloth bunches over the elbow point (back-outer)
-    for l, a in ((LU - 0.080, 0.0065), (LU - 0.057, 0.0060)):
-        R.append(dict(pts=[(_ph(245), l + 0.010), (_ph(280), l + 0.002), (_ph(312), l),
-                           (_ph(344), l + 0.002), (_ph(378), l + 0.011)], amp=a, width=0.0115, sharp=0.55))
-    R.append(dict(pts=[(_ph(250), LU - 0.058), (_ph(312), LU - 0.0685), (_ph(372), LU - 0.057)],
-                  amp=-0.0035, width=0.0065, sharp=0.8))
-    # 2. bunching above the cuff: three rolls wrapping most of the way round (open at the back-inner),
-    #    crests on rows; slight extra droop at the front on top of the row sag
-    for l, a in ((LU - 0.0375, 0.0085), (LU - 0.0150, 0.0095), (LU + 0.0075, 0.0080)):
-        pts = []
-        for k in range(11):
-            d = -105.0 + 300.0 * k / 10                       # -105 .. 195 deg
-            pts.append((_ph(d), l + 0.002 * math.sin(math.radians(d))))
-        R.append(dict(pts=pts, amp=a, width=0.0120, sharp=0.55))
-    for l in (LU - 0.0262, LU - 0.0038):                     # crisp creases between the rolls
-        R.append(dict(pts=[(_ph(-85), l), (_ph(45), l + 0.0015), (_ph(175), l)], amp=-0.0040, width=0.0065,
-                      sharp=0.8))
-    # 3. upper arm: long shallow drape folds from the armpit / front of the shoulder converging
-    #    diagonally on the elbow pit
-    R.append(dict(pts=[(_ph(92), 0.070), (_ph(106), 0.150), (_ph(118), LU - 0.116)], amp=0.0060, width=0.019,
-                  sharp=0.5))
-    R.append(dict(pts=[(_ph(152), 0.080), (_ph(142), 0.150), (_ph(130), LU - 0.110)], amp=0.0065, width=0.018,
-                  sharp=0.5))
-    R.append(dict(pts=[(_ph(196), 0.095), (_ph(180), 0.160), (_ph(150), LU - 0.118)], amp=0.0050, width=0.017,
-                  sharp=0.5))
-    R.append(dict(pts=[(_ph(124), 0.080), (_ph(123), 0.150), (_ph(124), LU - 0.130)], amp=-0.0035, width=0.009,
-                  sharp=0.7))                               # creases between the drapes
-    R.append(dict(pts=[(_ph(174), 0.090), (_ph(162), 0.160), (_ph(140), LU - 0.125)], amp=-0.0030, width=0.009,
-                  sharp=0.7))
-    return R
+def fold_low(phi):
+    """0 (back-outer) .. 1 (inside of the elbow): how far a tilted fold row drops at angle phi."""
+    return 0.5 + 0.5 * math.cos(phi - math.radians(FOLD_LOW_DEG))
 
 
-RIDGES = sleeve_ridges()
+def fold_amp(phi):
+    """The folds wrap all the way round, a little fuller on the inside of the elbow."""
+    return 0.85 + 0.15 * math.cos(phi - math.radians(FOLD_LOW_DEG))
 
 
-def fold_disp(l, phi):
-    """Radial wrinkle displacement at nominal arm position l, angle phi."""
-    fade = keyf(l, [(0.035, 0.0), (0.075, 1.0), (LU + 0.025, 1.0), (LU + 0.042, 0.0)])
-    if fade <= 0.0:
-        return 0.0
-    # folds flatten where they cross the stiff lengthwise seam (keeps the piping from kinking)
-    dphi = (phi - TAU * SEAM_PHI_INDEX / NS + math.pi) % TAU - math.pi
-    fade *= 1.0 - 0.45 * math.exp(-(dphi / 0.20) ** 2)
-    return fade * lib.fold_ridges(_arc(phi), l, RIDGES, period=P_ARC)
-
-
-def row_sag(l):
-    """How much of ROW_SAG a row at l carries (elbow + above the cuff only)."""
-    return keyf(l, [(LU - 0.14, 0.0), (LU - 0.05, 1.0), (LU + 0.02, 1.0), (LU + 0.05, 0.0)])
+def sleeve_rows(l0, l1):
+    """Square ring rows from l0 to l1 -> [(l, tilt, height_m)].  Rows tighten at every fold and are
+    evenly spaced (<= ROW_GAP) between folds; tilt blends between neighbouring folds."""
+    keys = []
+    for fd in FOLDS:
+        keys += [(fd.l + u, fd.tilt, h * fd.amp) for u, h in fd.rows()]
+    keys.sort()
+    merged = []
+    for k in keys:                                  # one fold's last row may be the next one's first
+        if merged and k[0] - merged[-1][0] < 0.001:
+            p = merged[-1]
+            merged[-1] = ((p[0] + k[0]) / 2, (p[1] + k[1]) / 2, (p[2] + k[2]) / 2)
+        else:
+            merged.append(k)
+    keys = merged
+    rows = []
+    prev = (l0, 0.0, 0.0)
+    for k in keys + [(l1, keys[-1][1] * 0.5, 0.0)]:
+        gap = k[0] - prev[0]
+        n = max(1, math.ceil(gap / ROW_GAP - 1e-6))
+        for i in range(1, n):
+            f = i / n
+            rows.append((prev[0] + gap * f, prev[1] + (k[1] - prev[1]) * f, 0.0))
+        rows.append(k)
+        prev = k
+    return rows
 
 
 def clamp_axis(p):
@@ -331,20 +319,21 @@ def build_sleeve(path):
         rho_t = R * math.hypot(kx * math.cos(phi_t), ky * math.sin(phi_t))
         phi_e = math.atan2(ky * math.sin(phi_t), kx * math.cos(phi_t))
         phi_e = phi_t + ((phi_e - phi_t + math.pi) % TAU - math.pi)
-        rho = rho0 + (rho_t - rho0) * wr + fold_disp(a, phi_t) * wr
+        rho = rho0 + (rho_t - rho0) * wr
         phi = phi0 + (phi_e - phi0) * wr
         c, t, f1, f2 = path.at(a)
         p = c + (f1 * math.cos(phi) + f2 * math.sin(phi)) * rho
-        return clamp_axis(clamp_to_coat(p, weight=min(1.0, k / 2.0)))
+        return clamp_axis(clamp_to_coat(p, weight=1.0, gap=0.004 + 0.003 * max(0.0, 1.0 - x / 0.35)))
 
-    def ring_pt(s, phi):
-        """Point of a square ring at nominal s (rows sag toward the front around the elbow)."""
+    def ring_pt(s, phi, tilt=0.0, h=0.0):
+        """Point of a ring at nominal s; tilt: row drops this much on the inside of the elbow;
+        h: fold height of the row (radial step out, along the outward normal)."""
         sp = math.sin(phi)
-        si = s + ROW_SAG * row_sag(s) * sp
+        si = s + tilt * fold_low(phi)
         c, t, f1, f2 = path.at(si)
         kx, ky = sleeve_k(si)
         R = sleeve_R(si)
-        d = fold_disp(s, phi)
+        d = h * fold_amp(phi)
         d += ELBOW_POINT * max(0.0, -sp) * math.exp(-((si - LU) / 0.020) ** 2)
         nx, ny = math.cos(phi) * kx, sp * ky                      # point on the ellipse ...
         gx, gy = math.cos(phi) / kx, sp / ky                      # ... and its outward normal
@@ -365,14 +354,10 @@ def build_sleeve(path):
         rows.append([blend_pt(k / KB, j * NS / NS2, k) for j in range(NS2)])
     n_blend32 = len(rows) - 3                                          # rows k = 4 .. KB
     # square rings down the arm
-    svals = []
-    n = max(1, round((LU - 0.045 - A_END) / ROW_UPPER))
-    svals += [A_END + (LU - 0.045 - A_END) * i / n for i in range(1, n + 1)]
-    n = round((0.0675) / ROW_ELBOW)
-    svals += [LU - 0.045 + 0.0675 * i / n for i in range(1, n + 1)]    # .. LU + 0.0225
-    svals += [LU + 0.033, LU + 0.044, LU + 0.056]                      # hidden inside the cuff
-    for s in svals:
-        rows.append([ring_pt(s, TAU * j / NS2) for j in range(NS2)])
+    rows_spec = sleeve_rows(A_END, LU + 0.056)          # ends ~3 cm inside the cuff's top edge
+    svals = [r[0] for r in rows_spec]
+    for s, tl, h in rows_spec:
+        rows.append([ring_pt(s, TAU * j / NS2, tl, h) for j in range(NS2)])
 
     # --- faces
     verts, faces = [], []
@@ -404,16 +389,16 @@ def build_sleeve(path):
     s_all = [None] * (3 + n_blend32) + svals
     def row_at(target):
         return 3 + n_blend32 + min(range(len(svals)), key=lambda i: abs(svals[i] - target))
-    i_el0, i_el1 = row_at(LU - 0.015), row_at(LU + 0.015)          # elbow support band boundaries
+    fe = FOLDS[-1]                                                 # elbow support band: the loops
+    i_el0, i_el1 = row_at(fe.l - 0.0045), row_at(fe.l + fe.drop + fe.back)   # of the fold at the elbow
     up_f = list(faces)
     for i in range(3, i_el0):
         up_f += band(ids[i], ids[i + 1])
     el_f = [f for i in range(i_el0, i_el1) for f in band(ids[i], ids[i + 1])]
     lo_f = [f for i in range(i_el1, len(ids) - 1) for f in band(ids[i], ids[i + 1])]
-    assert abs(s_all[i_el0] - (LU - 0.015)) < 1e-6 and abs(s_all[i_el1] - (LU + 0.015)) < 1e-6
 
     # --- lengthwise seam piping along vertex 2 of 16 / 4 of 32, following the wrinkled surface
-    i_end = row_at(LU + 0.033)                                        # piping ends just inside the cuff
+    i_end = row_at(LU + 0.030)                                        # piping ends just inside the cuff
     col = [ids[i][SEAM_PHI_INDEX if i < 3 else 2 * SEAM_PHI_INDEX] for i in range(i_end + 1)]
     seam_pts, seam_nrm = [], []
     for k, vi in enumerate(col):
