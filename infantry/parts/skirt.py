@@ -52,9 +52,9 @@ A_GAP_F, FRONT_UNDER_A, A_BACK_X = 0.003, 0.025, 0.150   # layer A starts at the
 SIDE_A = dict(tip=-18.0, tip_z=0.420, front_z=0.515, back_z=0.600, top=Z_TOP)   # side view: one long
                                     # diagonal hem from the back (high) to a point at the front-side
 SIDE_B = dict(front=322.0, back=58.0, tip=-10.0, tip_z=0.335, front_z=0.470, back_z=0.480, top=0.720)
-A_LIFT = (0.003, 0.010, 0.014)      # layer A over the panels: in the belt zone / below / extra flare
+A_LIFT = (0.001, 0.010, 0.014)      # layer A over the panels: in the belt zone / below / extra flare
                                     # (front view: the side flap stands off the body below z 0.75)
-B_LIFT = -0.012                     # layer B sits under the front / back panels
+B_LIFT = -0.014                     # layer B sits under the front / back panels
 FOLD_AMP, FOLD_COUNT, FOLD_SEED = 0.011, 8.0, 0.37
 # trim: wide border + piping (profile across the edge, s = inward from the cloth edge, h = off the cloth)
 T_OVER, T_RISE, T_UNDER = 0.003, 0.003, 0.006
@@ -68,7 +68,7 @@ EMB_VENT = (0.0, VENT_TOP - 0.075, 0.028, 0.0)
 U_OFF, U_GAP_X, U_GAP_Y = 0.018, 0.040, 0.028
 U_UNIT_F, U_N_F = 10.0, 5            # pleat width (deg) and count from the front groove outward
 U_UNIT_B, U_N_B = 11.0, 3            # pleats around the back vent (a face centred on the vent)
-U_N_PLAIN = 5
+U_N_PLAIN = 8
 U_GAP, U_DEPTH = 0.26, 0.016         # groove share of a pleat and groove depth at the hem
 U_SLIT_X = 0.003
 
@@ -81,7 +81,7 @@ TROUSER_ENV = [(1.20, 0.119, -0.105, 0.105), (1.15, 0.131, -0.109, 0.113), (1.10
                (0.65, 0.217, -0.100, 0.085), (0.60, 0.219, -0.097, 0.079), (0.55, 0.220, -0.098, 0.077),
                (0.50, 0.226, -0.096, 0.082), (0.45, 0.237, -0.093, 0.098), (0.40, 0.245, -0.084, 0.113),
                (0.35, 0.254, -0.080, 0.125), (0.30, 0.253, -0.072, 0.125)]
-U_CLEAR, COAT_OVER_UNDER, B_GAP = 0.006, 0.010, 0.024   # B_GAP: room for layer B at the sides
+U_CLEAR, COAT_OVER_UNDER, B_GAP = 0.008, 0.010, 0.024   # B_GAP: room for layer B at the sides
 
 NR_FRONT, NC_FRONT = 27, 7
 NR_BACK, NC_BACK = 28, 7
@@ -501,8 +501,9 @@ def _under_half():
             a_s = a + D(U_UNIT_F * (i + g / 2))
             if i == 0:
                 a_s = max(a_s, a_slit + D(1.0))
-            cols += [(a_s, 0.0), (a + D(U_UNIT_F * (i + 1 - g / 2)), 0.0),
-                     (a + D(U_UNIT_F * (i + 1)), -dep)]
+            cols += [(a_s, 0.0), (a + D(U_UNIT_F * (i + 1 - g / 2)), 0.0)]
+            if i < U_N_F - 1:                       # the last face runs straight into the plain sides
+                cols.append((a + D(U_UNIT_F * (i + 1)), -dep))
         a_end_f = a + D(U_UNIT_F * U_N_F)
         a_b0 = D(450.0 - U_UNIT_B * (U_N_B - 0.5))
         for i in range(1, U_N_PLAIN + 1):

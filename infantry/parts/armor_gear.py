@@ -57,9 +57,10 @@ GD_T = 0.0050
 GD_TRIM = (0.012, 0.0022)
 GD_PHI = (RAD(-96), RAD(104))   # front edge .. back edge, 0 = straight out from the arm (ref side:
                                 # the guard sits a little behind the arm centre)
-GD_TOP_Z = (1.550, 1.503)  # top edge cap: at its outer face / at its front and back legs.  The outer
-                           # face continues as a cap over the shoulder joint and stops under the
-                           # under-plate (ref side: the guard runs up under the plate's arch)
+GD_TOP_Z = (1.506, 1.503)
+# top edge cap: on the outer face / on the front and back legs.  The ref guard runs right up under
+# the plate's arch, but our sleeve alone already fills the ref outline at z 1.516 (x 0.271), so any
+# guard over it there would widen the FRONT / BACK silhouette by 6-12 %: it stops just below.
 GD_GAP = 0.004           # air between guard top and the under-plate's underside
 
 # belt
@@ -82,7 +83,7 @@ X_TONGUE_TIP = -0.090
 X_EYELETS = (-0.020, -0.045, -0.070)     # punched holes in the tongue
 X_DRING_FRONT = 0.113
 X_DRING_BACK = 0.100
-POUCH_FRONT = (0.150, 0.085, 0.130, 0.050)   # centre x, width, height, depth (ref x 0.11 .. 0.19)
+POUCH_FRONT = (0.152, 0.074, 0.136, 0.050)   # centre x, width, height, depth (ref x 0.11 .. 0.19, tall)
 POUCH_BACK = (0.148, 0.080, 0.120, 0.045)    # ref back: |x| 0.10 .. 0.195, z 1.05 .. 1.17
 POUCH_BACK_DROP = 0.016                      # back pouches hang this much lower on their straps
 POUCH_CLR = 0.012
@@ -93,6 +94,7 @@ CAN_R = 0.040
 CAN_L = 0.250
 CAN_TOP_Z = BELT_Z0 - 0.014
 CAN_CLR = 0.012
+CAN_PLUMB = 0.5          # 0 = lies along the flaring skirt, 1 = hangs plumb (ref: nearly vertical)
 HOSE_R = 0.011
 
 
@@ -366,7 +368,7 @@ def _skirt_th(x, z, off, back=False, half=0.0):
     return sx * best
 
 
-def _hang_frame(th, z_top, z_bot, clr, half=0.0):
+def _hang_frame(th, z_top, z_bot, clr, half=0.0, vert=0.0):
     """Frame lying on the (flaring) skirt: origin `clr` outside the skirt at z_top, z axis running up
     the skirt slope, y axis = outward surface normal, x along increasing theta.  half = angular
     half width of the gear (it rests on the outermost cloth under it)."""
@@ -381,6 +383,9 @@ def _hang_frame(th, z_top, z_bot, clr, half=0.0):
     if short > 0.0:                      # skirt bulges between top and bottom: push out
         p_top, p_bot = p_top + rad * short, p_bot + rad * short
     up = (p_top - p_bot).normalized()
+    if vert:                             # hangs closer to plumb: pivot about the bottom contact
+        up = up.lerp(V((0, 0, 1)), vert).normalized()
+        p_top = p_bot + up * ((p_top.z - p_bot.z) / up.z)
     t = _skirt_pt(th + 0.06, clr, z_top, half) - _skirt_pt(th - 0.06, clr, z_top, half)
     n = t.cross(up).normalized()
     t = up.cross(n).normalized()
@@ -476,7 +481,7 @@ def _gd_point(s, phi, extra=0.0):
 
 def _gd_s_range(phi):
     tau = GD_T + GD_TRIM[1]
-    cap0 = _lerp(GD_TOP_Z[0], GD_TOP_Z[1], _smooth(RAD(15), RAD(60), abs(phi)))
+    cap0 = _lerp(GD_TOP_Z[0], GD_TOP_Z[1], _smooth(RAD(30), RAD(75), abs(phi)))
 
     def above(s):                                        # > 0 while the edge is too high
         q = _gd_point(s, phi, tau)
@@ -798,7 +803,7 @@ def _can_frame():
     global _TH_CAN
     if _TH_CAN is None:
         _TH_CAN = _can_theta()
-    return _hang_frame(_TH_CAN, CAN_TOP_Z, CAN_TOP_Z - CAN_L, 0.0, _CAN_HALF)
+    return _hang_frame(_TH_CAN, CAN_TOP_Z, CAN_TOP_Z - CAN_L, 0.0, _CAN_HALF, vert=CAN_PLUMB)
 
 
 def _can_axis(h):
@@ -879,14 +884,15 @@ def _hoses():
     parts.append(_collar(_can_axis(h_s) + d_o * (R + 0.006), d_o))
     parts.append(_collar(_can_axis(h_e) + d_o * (R + 0.006), d_o))
     # --- hose B: from the mid band on the inner side up to the belt's lower edge near the front
-    h_b = -0.103
+    h_b = -0.118
     zt = BELT_Z0 - 0.010
-    th_t = _skirt_th(-0.052, zt, 0.0)
+    th_t = _skirt_th(-0.050, zt, 0.0)
     top = _skirt_pt(th_t, HOSE_R + 0.010, zt)
-    mid = _skirt_pt(_skirt_th(-0.060, 1.115, 0.0), HOSE_R + 0.012, 1.115)
-    ctrl = [_can_axis(h_b) + d_i * (R + 0.008), _can_axis(h_b) + d_i * (R + 0.026) + up * 0.004,
-            _can_axis(h_b) + d_i * (R + 0.040) + up * 0.026,
-            mid, top + V((0, 0, -0.030)), top]
+    z1, z2 = 1.080, 1.125
+    p1 = _skirt_pt(_skirt_th(-0.072, z1, 0.0), HOSE_R + 0.014, z1)
+    p2 = _skirt_pt(_skirt_th(-0.054, z2, 0.0), HOSE_R + 0.012, z2)
+    ctrl = [_can_axis(h_b) + d_i * (R + 0.008), _can_axis(h_b) + d_i * (R + 0.024) - up * 0.002,
+            p1, p2, top + V((0, 0, -0.026)), top]
     parts.append(_ribbed("hose_b", ctrl, 4, 11))
     parts.append(_collar(_can_axis(h_b) + d_i * (R + 0.008), d_i))
     clip = lib.cylinder("hose_clip", HOSE_R + 0.004, 0.018, n=8)
