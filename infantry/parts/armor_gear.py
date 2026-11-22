@@ -31,15 +31,18 @@ DEG = math.degrees
 
 # shoulder plate (P1) lying on the shoulder slope, with a slightly larger under-plate (P2) below it
 PL_X0 = 0.140            # inner end, against the collar (ref front: 0.145 at the top edge)
-PL_X1 = 0.258            # outer end of the top plate's crown (ref front: 0.258 at z 1.56)
+PL_X1 = 0.252            # outer end of the top plate's crown (ref front: 0.258 at z 1.56, incl. the
+                         # under-plate step)
 PL_STEP = 0.010          # the under-plate peeks out this far beyond the top plate (ref: double edge)
 PL_LEAN = 0.55           # ends slant inward going down (ref front: outer end 0.258@1.56 -> 0.205@1.495)
-PL_W = (0.110, 0.124)    # under-plate half width front-back at the inner / outer end (ref side arch)
-PL_D = (0.060, 0.095)    # front / back legs drop this far below the crown at inner / outer end
+PL_W = (0.128, 0.126)    # under-plate half width front-back at the inner / outer end (ref side arch;
+                         # wide at the collar end so the front leg passes in front of the chest)
+PL_D = (0.032, 0.095)    # front / back legs drop this far below the crown at inner / outer end
 PL_YC = 0.008            # arch centre a little behind the shoulder line (ref side)
 PL_POW = 2.6             # arch section superellipse power
 PL_CLR = 0.008           # under-plate underside above the coat shoulder / armhole top
-PL_Z_IN = 1.5955         # under-plate crown height at its inner end (coat yoke ~1.591 there + 0.0045;
+PL_SLOPE = 0.06          # linear fall of the crown from the collar end (follows the coat yoke)
+PL_Z_IN = 1.5918         # under-plate crown height at its inner end (coat yoke ~1.591 there + 0.0045;
                          # the ref plate tops out at 1.605, so the stack has to stay thin)
 PL_T2, PL_T1 = 0.0045, 0.0070            # under-plate / top plate thickness
 PL_TRIM = (0.012, 0.0025)                # top plate raised border frame: width, height
@@ -54,7 +57,7 @@ GD_T = 0.0050
 GD_TRIM = (0.012, 0.0022)
 GD_PHI = (RAD(-96), RAD(104))   # front edge .. back edge, 0 = straight out from the arm (ref side:
                                 # the guard sits a little behind the arm centre)
-GD_TOP_Z = (1.535, 1.505)  # top edge of the guard: at its outer face / at its front and back legs
+GD_TOP_Z = (1.506, 1.500)  # top edge of the guard: at its outer face / at its front and back legs
                            # (tucks under the plates; ref 1.50-1.535)
 GD_GAP = 0.004           # air between guard top and the under-plate's underside
 
@@ -62,7 +65,8 @@ GD_GAP = 0.004           # air between guard top and the under-plate's underside
 BELT_Z0, BELT_Z1 = C["belt_z"]
 BELT_ZM = 0.5 * (BELT_Z0 + BELT_Z1)
 BELT_RO = C["belt_offset"]
-BELT_RI = 0.0365         # DETAIL_PASS: cloth inside the belt zone stays <= +0.036
+BELT_RI = 0.0375         # DETAIL_PASS: cloth inside the belt zone stays <= +0.036 (the skirt measures
+                         # +0.0364; 40-segment chords sag 0.45 mm inward, so keep a millimetre)
 BELT_RIM = 0.0025        # stitched rims stand proud of the +0.040 field
 BELT_N = 40
 TONGUE_T, TONGUE_W = 0.0045, 0.040
@@ -321,10 +325,19 @@ def _skirt_r(th, z):
     return _guide_r(th, z)
 
 
-def _skirt_pt(th, off, z):
-    """Point `off` outside the skirt along its horizontal normal at (th, z)."""
-    e = 0.01
-    p = lambda t: V((math.sin(t), -math.cos(t), 0.0)) * _skirt_r(t, z)
+def _skirt_rmax(th, z, half):
+    """Outermost skirt radius over the angular window th +- half (gear spanning a panel edge rests
+    on the outer panel; the overlap panels make outer_radius step at their edges)."""
+    if half <= 0.0:
+        return _skirt_r(th, z)
+    return max(_skirt_r(th + half * k / 3.0, z) for k in range(-3, 4))
+
+
+def _skirt_pt(th, off, z, half=0.0):
+    """Point `off` outside the skirt along its horizontal normal at (th, z).  The normal comes from
+    a wide baseline so steps at panel edges do not tilt it."""
+    e = 0.06
+    p = lambda t: V((math.sin(t), -math.cos(t), 0.0)) * _skirt_rmax(t, z, half)
     c = p(th)
     tg = (p(th + e) - p(th - e)).normalized()
     n = tg.cross(V((0, 0, 1))).normalized()
@@ -333,7 +346,7 @@ def _skirt_pt(th, off, z):
     return c + n * off + V((0, 0, z))
 
 
-def _skirt_th(x, z, off, back=False):
+def _skirt_th(x, z, off, back=False, half=0.0):
     """Angle (wearer's left if x > 0) on the front / back half where the skirt point + off has the given x."""
     lo, hi = (RAD(1), RAD(179)) if not back else (RAD(1), RAD(179))
     sx = 1 if x > 0 else -1
@@ -342,7 +355,7 @@ def _skirt_th(x, z, off, back=False):
     a, b = (RAD(0.5), RAD(95)) if not back else (RAD(85), RAD(179.5))
     for _ in range(40):
         m = 0.5 * (a + b)
-        xm = _skirt_pt(m, off, z).x
+        xm = _skirt_pt(m, off, z, half).x
         if (xm < abs(x)) == (not back):
             a = m
         else:
@@ -351,13 +364,22 @@ def _skirt_th(x, z, off, back=False):
     return sx * best
 
 
-def _hang_frame(th, z_top, z_bot, clr):
+def _hang_frame(th, z_top, z_bot, clr, half=0.0):
     """Frame lying on the (flaring) skirt: origin `clr` outside the skirt at z_top, z axis running up
-    the skirt slope, y axis = outward surface normal, x along increasing theta."""
-    p_top = _skirt_pt(th, clr, z_top)
-    p_bot = _skirt_pt(th, clr, z_bot)
+    the skirt slope, y axis = outward surface normal, x along increasing theta.  half = angular
+    half width of the gear (it rests on the outermost cloth under it)."""
+    z_mid = 0.5 * (z_top + z_bot)
+    p_top = _skirt_pt(th, clr, z_top, half)
+    p_bot = _skirt_pt(th, clr, z_bot, half)
+    # the bottom of the gear must clear the skirt too: lean out until both ends clear it
+    p_mid = _skirt_pt(th, clr, z_mid, half)
+    lerp_mid = p_top.lerp(p_bot, 0.5)
+    rad = V((p_mid.x, p_mid.y, 0.0)).normalized()
+    short = (p_mid - lerp_mid).dot(rad)
+    if short > 0.0:                      # skirt bulges between top and bottom: push out
+        p_top, p_bot = p_top + rad * short, p_bot + rad * short
     up = (p_top - p_bot).normalized()
-    t = _skirt_pt(th + 0.01, clr, z_top) - _skirt_pt(th - 0.01, clr, z_top)
+    t = _skirt_pt(th + 0.06, clr, z_top, half) - _skirt_pt(th - 0.06, clr, z_top, half)
     n = t.cross(up).normalized()
     t = up.cross(n).normalized()
     return _Frame(p_top, t, n, up)
@@ -373,12 +395,13 @@ _AO = _AD.cross(_AB).normalized()                           # outward (+X, a lit
 
 _ARM_TOP = spec.armhole_ring(16)[0]                         # top of the armhole seam
 # under-plate crown: PL_Z_IN at the collar end, passing PL_CLR above the armhole seam's top point
-_PL_KC = (PL_Z_IN - (_ARM_TOP.z + PL_CLR)) / (_ARM_TOP.x - PL_X0) ** 2
+_PL_KC = (PL_Z_IN - PL_SLOPE * (_ARM_TOP.x - PL_X0) - (_ARM_TOP.z + PL_CLR)) / (_ARM_TOP.x - PL_X0) ** 2
 _P2_X1 = PL_X1 + PL_STEP
 
 
 def _pl_zc(x):
-    return PL_Z_IN - _PL_KC * max(x - PL_X0, 0.0) ** 2
+    dx = max(x - PL_X0, 0.0)
+    return PL_Z_IN - PL_SLOPE * dx - _PL_KC * dx * dx
 
 
 def _pl_w(u):
@@ -485,17 +508,17 @@ def _pauldron_left():
                           PL_X1 - PL_X0, _PL_LV * (1 - 2 * _P1_V0), PL_T1, PL_TRIM[0], PL_TRIM[1],
                           keep_under=1)
     parts.append(lib.mesh_object("pauldron_plate", vs, fs, topo="rigid"))
-    for v in (0.19, 0.81):
-        for u in (0.25, 0.5, 0.75):
+    for v in (0.135, 0.865):
+        for u in (0.22, 0.47, 0.72):
             p, n = surf(u, v)
             parts.append(_rivet("rivet", p, n, r=0.0095, h=0.0068))
     p, n = surf(0.93, 0.5)                      # small stud on the outer end (ref side view)
-    parts.append(_rivet("rivet", p, n, r=0.0065, h=0.004))
+    parts.append(_rivet("rivet", p, n, r=0.0065, h=0.004, n=6))
     # --- upper-arm guard
     lu = 0.15
     vs, fs, gsurf = _plate(_guard_P, [0.22, 0.36, 0.5, 0.64, 0.78],
                            [0.17, 0.27, 0.38, 0.5, 0.62, 0.73, 0.83],
-                           lu, _GD_LV * 1.1, GD_T, GD_TRIM[0], GD_TRIM[1], keep_under=2)
+                           lu, _GD_LV * 1.1, GD_T, GD_TRIM[0], GD_TRIM[1], keep_under=1)
     parts.append(lib.mesh_object("pauldron_guard", vs, fs, topo="rigid"))
     # rolled rim along the bottom edge
     pts, nrm = [], []
@@ -525,7 +548,7 @@ def _pauldron_left():
                                   up=-_AD, long_tail=1.0))
     for v in (0.12, 0.88):
         p, n = gsurf(0.80, v)
-        parts.append(_rivet("guard_rivet", p, n, r=0.0055, h=0.0035))
+        parts.append(_rivet("guard_rivet", p, n, r=0.0055, h=0.0035, n=6))
     return lib.join(parts, "pauldron_L", topo="rigid")
 
 
@@ -569,7 +592,7 @@ def _keeper(name, th, w=0.016, over=None, hang=0.0):
     rings = _strap_section(th, pts, w, T)
     if hang:
         def P(off, z):
-            return _skirt_pt(th, off, z)
+            return _skirt_pt(th, off, z, 0.12)
         lo = [(0.004 + T / 2, z0 - hang * k, 1, 0) for k in (0.45, 1.0)]
         rings += _strap_section(th, lo, w, T, P)
     else:
@@ -614,8 +637,8 @@ def _dring(name, th, zc=BELT_ZM + 0.004):
         nr = V((tg.y, -tg.x))
         c = p0 + t0 * q.x + up * q.y
         side = t0 * nr.x + up * nr.y
-        rings.append([c + side * tube * math.cos(math.tau * j / 6) + n0 * tube * math.sin(math.tau * j / 6)
-                      for j in range(6)])
+        rings.append([c + side * tube * math.cos(math.tau * j / 5) + n0 * tube * math.sin(math.tau * j / 5)
+                      for j in range(5)])
     ring = lib.mesh_object(name + "_ring", *_torus(rings), topo="rigid", sharp_angle=60)
     tab = _strap_section(th, [(BELT_RO + BELT_RIM + 0.0005, zc + 0.012, 1, 0),
                               (BELT_RO + BELT_RIM + 0.0055, zc - 0.002, 1, 0)], 0.014, 0.003)
@@ -639,7 +662,7 @@ def _belt():
     for k, dx in enumerate((-0.030, 0.0, 0.030)):          # punched holes at the back centre
         th = _back(_belt_th(dx)) if dx else math.pi
         p, n, t = _ell(spec.torso_section(BELT_ZM), th, BELT_RO, BELT_ZM)
-        parts.append(_grommet("eyelet", p, n, t) if dx else _rivet("belt_rivet", p, n, r=0.0055, h=0.0035))
+        parts.append(_grommet("eyelet", p, n, t) if dx else _rivet("belt_rivet", p, n, r=0.0055, h=0.0035, n=6))
     parts += _dring("dring_f", _belt_th(X_DRING_FRONT))
     for s in (1, -1):
         parts += _dring("dring_b", _back(_belt_th(s * X_DRING_BACK)))
@@ -692,7 +715,8 @@ def _buckle():
 
 # ============================================================================ pouches
 def _pouch(name, th, w, h, d, cross_clasp=True):
-    fr = _hang_frame(th, BELT_Z0 + 0.003, BELT_Z0 + 0.003 - h, POUCH_CLR)
+    half = (w * 0.5 + 0.006) / max(_skirt_r(th, BELT_Z0 - h * 0.5), 0.1)
+    fr = _hang_frame(th, BELT_Z0 + 0.003, BELT_Z0 + 0.003 - h, POUCH_CLR, half)
     parts = []
     n = 16
 
@@ -733,7 +757,7 @@ def _pouch(name, th, w, h, d, cross_clasp=True):
     if cross_clasp:
         bar = lib.box("pouch_bar", (0.034, 0.004, 0.008), bevel_w=0.0012)
         parts.append(fr.place(bar, (0.0, yf + 0.0035, zt + 0.004)))
-    parts.append(_rivet("pouch_stud", fr(0.0, yf + 0.0045, zt - 0.008), fr.y, r=0.0050, h=0.0035))
+    parts.append(_rivet("pouch_stud", fr(0.0, yf + 0.0045, zt - 0.008), fr.y, r=0.0050, h=0.0035, n=6))
     # hanger strap over the belt
     parts.append(_keeper("pouch_hanger", th, w=0.026, hang=0.020))
     return lib.join(parts, name, topo="rigid")
@@ -741,11 +765,12 @@ def _pouch(name, th, w, h, d, cross_clasp=True):
 
 # ============================================================================ canister + hoses
 CAN_AXIS_OFF = CAN_R + 0.006 + CAN_CLR      # axis distance outside the skirt (bands stand 0.006 proud)
+_CAN_HALF = 0.30                            # angular half width the canister covers on the skirt (rad)
 
 
 def _can_theta():
     zm = CAN_TOP_Z - CAN_L * 0.5
-    return _skirt_th(CAN_X, zm, CAN_AXIS_OFF)
+    return _skirt_th(CAN_X, zm, CAN_AXIS_OFF, half=_CAN_HALF)
 
 
 _TH_CAN = None
@@ -755,7 +780,7 @@ def _can_frame():
     global _TH_CAN
     if _TH_CAN is None:
         _TH_CAN = _can_theta()
-    return _hang_frame(_TH_CAN, CAN_TOP_Z, CAN_TOP_Z - CAN_L, 0.0)
+    return _hang_frame(_TH_CAN, CAN_TOP_Z, CAN_TOP_Z - CAN_L, 0.0, _CAN_HALF)
 
 
 def _can_axis(h):
@@ -793,7 +818,7 @@ def _canister():
 
 
 def _collar(loc, axis, r=0.0155, depth=0.014):
-    col = lib.cylinder("hose_collar", r, depth, n=8, bevel_w=0.0012)
+    col = lib.cylinder("hose_collar", r, depth, n=8)
     return lib.align_z_to(col, axis, loc)
 
 
@@ -846,7 +871,7 @@ def _hoses():
             mid, top + V((0, 0, -0.030)), top]
     parts.append(_ribbed("hose_b", ctrl, 4, 11))
     parts.append(_collar(_can_axis(h_b) + d_i * (R + 0.008), d_i))
-    clip = lib.cylinder("hose_clip", HOSE_R + 0.004, 0.018, n=8, bevel_w=0.0015)
+    clip = lib.cylinder("hose_clip", HOSE_R + 0.004, 0.018, n=8)
     parts.append(lib.align_z_to(clip, (top - ctrl[-2]).normalized(), top - (top - ctrl[-2]).normalized() * 0.006))
     return lib.join(parts, "canister_hose", topo="rigid")
 
@@ -860,10 +885,10 @@ def build():
     objs.append(_buckle())
     xf, wf, hf, df = POUCH_FRONT
     zf = BELT_Z0 - hf * 0.5
-    objs.append(_pouch("pouch_front_L", _skirt_th(xf, zf, POUCH_CLR + df * 0.5), wf, hf, df))
+    objs.append(_pouch("pouch_front_L", _skirt_th(xf, zf, POUCH_CLR + df * 0.5, half=0.3), wf, hf, df))
     xb, wb, hb, db = POUCH_BACK
     zb = BELT_Z0 - hb * 0.5
-    thb = _skirt_th(xb, zb, POUCH_CLR + db * 0.5, back=True)
+    thb = _skirt_th(xb, zb, POUCH_CLR + db * 0.5, back=True, half=0.3)
     objs.append(_pouch("pouch_back_L", thb, wb, hb, db))
     objs.append(_pouch("pouch_back_R", -thb, wb, hb, db))
     objs.append(_canister())

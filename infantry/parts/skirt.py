@@ -41,25 +41,28 @@ UNDER_HEM = C["under_skirt_hem_z"]
 # ---- read from the reference (docs/ref/*_skirt.png, measured with tools/compare.py masks) -------
 SIL_TOP = (BELT_LO, 0.133)          # FRONT/BACK outline is a straight A-line from the belt bottom ...
                                     # ... to (skirt_hem_z, skirt_hem_rx)
-SEAM_X = 0.0035                     # front panels meet edge to edge above the slit (under the buckle)
+SEAM_X = 0.0050                     # front panels meet edge to edge above the slit (under the buckle)
+VENT_SEAM = 0.0045                  # back panels meet edge to edge above the vent
 BACK_TIP_Z = Z_TIP - 0.040          # back view: back tips hang ~4 cm lower than the front tips
 FRONT_CORNER = (0.250, 0.510)       # front view: front panel outer corner (x, z) ...
-FRONT_OUT_SLOPE, FRONT_OUT_MIN = 0.30, 0.070   # ... its outer edge climbs inward (x 0.11 at z 0.9)
+FRONT_OUT_SLOPE, FRONT_OUT_MIN = 0.30, 0.095   # ... its outer edge climbs inward (x 0.11 at z 0.9)
 BACK_OUT_X, BACK_CORNER_Z = 0.175, 0.410      # back view: back panels reach x 0.175, corner z 0.41
-A_OVERLAP_F, A_BACK_X = 0.020, 0.150          # layer A laps 2.5 cm over the front panel; back edge x 0.15
-SIDE_A = dict(tip=14.0, tip_z=0.420, front_z=0.600, back_z=0.580, top=Z_TOP)   # pointed at the side
-SIDE_B = dict(front=322.0, back=58.0, tip=18.0, tip_z=0.335, front_z=0.470, back_z=0.460, top=0.720)
-A_LIFT = (0.004, 0.012, 0.012)      # layer A over the panels: in the belt zone / below / extra flare
+A_GAP_F, FRONT_UNDER_A, A_BACK_X = 0.003, 0.025, 0.150   # layer A starts at the front panel's outer
+                                    # border (double border line); the front panel runs on under it; A back edge x 0.15
+SIDE_A = dict(tip=-18.0, tip_z=0.420, front_z=0.515, back_z=0.600, top=Z_TOP)   # side view: one long
+                                    # diagonal hem from the back (high) to a point at the front-side
+SIDE_B = dict(front=322.0, back=58.0, tip=-10.0, tip_z=0.335, front_z=0.470, back_z=0.480, top=0.720)
+A_LIFT = (0.003, 0.010, 0.014)      # layer A over the panels: in the belt zone / below / extra flare
                                     # (front view: the side flap stands off the body below z 0.75)
 B_LIFT = -0.012                     # layer B sits under the front / back panels
-FOLD_AMP, FOLD_COUNT, FOLD_SEED = 0.008, 8.0, 0.37
+FOLD_AMP, FOLD_COUNT, FOLD_SEED = 0.011, 8.0, 0.37
 # trim: wide border + piping (profile across the edge, s = inward from the cloth edge, h = off the cloth)
 T_OVER, T_RISE, T_UNDER = 0.003, 0.003, 0.006
 T_PROFILE = [(-T_OVER, -T_UNDER), (-T_OVER, T_RISE), (0.030, T_RISE), (0.034, 0.0009),
              (0.039, 0.0020), (0.044, 0.0008), (0.044, -0.0020), (0.014, -T_UNDER)]
 # emblems: (x, z, half width, tilt deg) -- front ones lean toward the panel tip like the reference
-EMB_FRONT = (0.168, 0.590, 0.045, -8.0)
-EMB_BACK = (0.092, 0.500, 0.042, 0.0)
+EMB_FRONT = (0.158, 0.565, 0.040, -8.0)
+EMB_BACK = (0.098, 0.500, 0.034, 0.0)
 EMB_VENT = (0.0, VENT_TOP - 0.075, 0.028, 0.0)
 # under skirt (box pleats)
 U_OFF, U_GAP_X, U_GAP_Y = 0.018, 0.040, 0.028
@@ -68,6 +71,17 @@ U_UNIT_B, U_N_B = 11.0, 3            # pleats around the back vent (a face centr
 U_N_PLAIN = 5
 U_GAP, U_DEPTH = 0.26, 0.016         # groove share of a pleat and groove depth at the hem
 U_SLIT_X = 0.003
+
+# trouser outer envelope from the legs author (z: max|x|, y-front, y-back); the under skirt keeps
+# U_CLEAR outside it and the coat keeps COAT_OVER_UNDER outside the under skirt
+TROUSER_ENV = [(1.20, 0.119, -0.105, 0.105), (1.15, 0.131, -0.109, 0.113), (1.10, 0.144, -0.115, 0.121),
+               (1.05, 0.157, -0.120, 0.130), (1.00, 0.176, -0.118, 0.124), (0.96, 0.191, -0.117, 0.120),
+               (0.93, 0.200, -0.116, 0.117), (0.90, 0.202, -0.107, 0.107), (0.85, 0.206, -0.106, 0.101),
+               (0.80, 0.211, -0.106, 0.099), (0.75, 0.214, -0.102, 0.094), (0.70, 0.216, -0.102, 0.090),
+               (0.65, 0.217, -0.100, 0.085), (0.60, 0.219, -0.097, 0.079), (0.55, 0.220, -0.098, 0.077),
+               (0.50, 0.226, -0.095, 0.082), (0.45, 0.238, -0.091, 0.100), (0.40, 0.245, -0.079, 0.115),
+               (0.35, 0.256, -0.074, 0.130), (0.30, 0.255, -0.064, 0.132)]
+U_CLEAR, COAT_OVER_UNDER, B_GAP = 0.006, 0.010, 0.024   # B_GAP: room for layer B at the sides
 
 NR_FRONT, NC_FRONT = 27, 7
 NR_BACK, NC_BACK = 28, 7
@@ -98,7 +112,7 @@ _TOP_B = _bare(Z_TOP)
 
 
 def _a_lift(z, flare=True):
-    return (A_LIFT[0] + (A_LIFT[1] - A_LIFT[0]) * _sstep(BELT_LO + 0.005, BELT_LO - 0.055, z)
+    return (A_LIFT[0] + (A_LIFT[1] - A_LIFT[0]) * _sstep(BELT_LO + 0.003, BELT_LO - 0.030, z)
             + (A_LIFT[2] * _sstep(1.0, 0.72, z) if flare else 0.0))
 
 
@@ -107,21 +121,119 @@ def _sil_rx(z):
     return r0 + (HEM_RX - r0) * (z0 - z) / (z0 - Z_HEM)
 
 
-def section(z, kind="coat"):
-    """(cy, rx, ry_front, ry_back) of the base coat surface (or the under skirt) at height z."""
+def _design(z):
+    """Unconstrained coat + under-skirt sections from the reference outline."""
     cy, bx, by = _bare(z)
     ze = max(z, Z_TOP - 1.06 * (Z_TOP - Z_HEM))          # stop flaring a little below the hem
     t = (Z_TOP - ze) / (Z_TOP - Z_HEM)
     off = OFF - 0.002 * _sstep(1.17, 1.08, z)            # 2 mm tighter over the hips (reference outline)
     tx, ty = _TOP_B[1] + OFF, _TOP_B[2] + OFF
     rx = _smax(bx + off, max(tx, _sil_rx(ze) - _a_lift(ze, False)))
-    ryf = _smax(by + off, ty + (HEM_RY - ty) * t)
-    ryb = _smax(by + off, ty + (HEM_RYB - ty) * t)
+    ryf = _smax(by + off, ty + (HEM_RY - ty) * min(t, 1.0))      # side view: no more depth below the hem
+    ryb = _smax(by + off, ty + (HEM_RYB - ty) * min(t, 1.0))
+    u = (_smax(bx + U_OFF, rx - U_GAP_X), _smax(by + U_OFF, ryf - U_GAP_Y), _smax(by + U_OFF, ryb - U_GAP_Y))
+    return cy, (rx, ryf, ryb), u
+
+
+def _env(z):
+    T = TROUSER_ENV
+    if z >= T[0][0]:
+        return T[0][1:]
+    if z <= T[-1][0]:
+        return T[-1][1:]
+    for (z0, *a), (z1, *b) in zip(T, T[1:]):
+        if z1 <= z <= z0:
+            f = (z0 - z) / (z0 - z1)
+            return tuple(p + (q - p) * f for p, q in zip(a, b))
+
+
+def _trouser_req(z):
+    """Smallest under-skirt (rx, ryf, ryb) that clears the trousers by U_CLEAR at height z.
+    Measured on the legs mesh: with the depth kept >= the envelope depth + 1 cm, the width the
+    under skirt needs is the envelope width + ~1.5 %."""
+    mx, yf, yb = _env(z)
+    return mx * 1.015 + U_CLEAR, -yf + U_CLEAR + 0.010, yb + U_CLEAR + 0.010
+
+
+_RAW, _REQ = {}, {}
+
+
+def _raw_req(i):
+    if i not in _RAW:
+        zi = i * 0.005
+        _RAW[i] = _trouser_req(zi)
+    return _RAW[i]
+
+
+def _smooth_req(i):
+    """Running max over +-3 cm, then a +-3 cm mean: no kinks where the trouser model switches."""
+    if i not in _REQ:
+        mx = []
+        for d in range(-6, 7):
+            mx.append([max(_raw_req(i + d + e)[c] for e in range(-6, 7)) for c in range(3)])
+        _REQ[i] = tuple(sum(m[c] for m in mx) / len(mx) for c in range(3))
+    return _REQ[i]
+
+
+def _req(z):
+    """Trouser requirement, tabulated every 5 mm and interpolated (section() is called a lot)."""
+    k = z / 0.005
+    i0 = math.floor(k)
+    f = k - i0
+    sm = [p + (q - p) * f for p, q in zip(_smooth_req(i0), _smooth_req(i0 + 1))]
+    raw = [p + (q - p) * f for p, q in zip(_raw_req(i0), _raw_req(i0 + 1))]
+    w = _sstep(BELT_LO - 0.035, BELT_LO, z)          # the belt zone keeps its exact clearances
+    return tuple(p + (q - p) * w for p, q in zip(sm, raw))
+
+
+def _section_raw(z, kind="coat"):
+    cy, c, u = _design(z)
+    q = _req(z)
+    u = tuple(_smax(a, b) for a, b in zip(u, q))
     if kind == "under":
-        rx = _smax(bx + U_OFF, rx - U_GAP_X)
-        ryf = _smax(by + U_OFF, ryf - U_GAP_Y)
-        ryb = _smax(by + U_OFF, ryb - U_GAP_Y)
-    return cy, rx, ryf, ryb
+        return (cy,) + u
+    gap = COAT_OVER_UNDER + (B_GAP - COAT_OVER_UNDER) * _sstep(SIDE_B["top"] + 0.06, SIDE_B["top"] + 0.02, z)
+    c = (_smax(c[0], u[0] + gap), _smax(c[1], u[1] + COAT_OVER_UNDER), _smax(c[2], u[2] + COAT_OVER_UNDER))
+    return (cy,) + c
+
+
+HULL_TOP, HULL_BOT, _HULL = 1.150, 0.300, []
+
+
+def _hull_rx(z):
+    """Upper concave hull of the coat half-width between HULL_TOP and HULL_BOT: where the trousers
+    push the hips out, the cloth bridges straight down to the flare instead of following the bulge
+    (the reference outline is a clean A-line)."""
+    if not _HULL:
+        pts = []
+        for i in range(int(round((HULL_TOP - HULL_BOT) / 0.005)) + 1):
+            zi = HULL_TOP - 0.005 * i
+            pts.append((zi, _section_raw(zi)[1]))
+        hull = []
+        for p in pts:                               # monotone chain, keep the upper (outer) side
+            while len(hull) >= 2:
+                (z1, r1), (z2, r2) = hull[-2], hull[-1]
+                if (r2 - r1) * (p[0] - z1) - (p[1] - r1) * (z2 - z1) <= 0:   # middle point under the chord
+                    hull.pop()
+                else:
+                    break
+            hull.append(p)
+        _HULL.extend(hull)
+    for (z1, r1), (z2, r2) in zip(_HULL, _HULL[1:]):
+        if z2 <= z <= z1:
+            return r1 + (r2 - r1) * (z1 - z) / (z1 - z2)
+    return None
+
+
+def section(z, kind="coat"):
+    """(cy, rx, ry_front, ry_back) of the base coat surface (or the under skirt) at height z.
+    Reference A-line outline, never closer than the clearances to the real trousers."""
+    s = _section_raw(z, kind)
+    if kind == "coat" and HULL_BOT <= z <= HULL_TOP:
+        h = _hull_rx(z)
+        if h is not None and h > s[1]:
+            s = (s[0], h, s[2], s[3])
+    return s
 
 
 def _emblem_centres():
@@ -292,7 +404,7 @@ def _front_edge_x(z):
 
 
 def _back_edge_x(z):
-    return 0.0015 + max(0.0, (VENT_TOP - z) * (VENT_W - 0.0015) / (VENT_TOP - Z_HEM))
+    return VENT_SEAM + max(0.0, (VENT_TOP - z) * (VENT_W - VENT_SEAM) / (VENT_TOP - Z_HEM))
 
 
 def _front_out_x(z):
@@ -305,7 +417,7 @@ def _back_out_x(z, x=BACK_OUT_X):
 
 def front_panel():
     return Panel(lambda z: _angle_for_x(_front_edge_x(z), z, True),
-                 lambda z: _angle_for_x(_front_out_x(z), z, True),
+                 lambda z: _angle_for_x(_front_out_x(z) + FRONT_UNDER_A, z, True),
                  lambda u: Z_TIP + (FRONT_CORNER[1] - Z_TIP) * u,
                  [i / NC_FRONT for i in range(NC_FRONT + 1)], NR_FRONT, 0.0)
 
@@ -330,7 +442,7 @@ def _side_hem(L, e0, e1):
 
 
 def _a_edges():
-    e0 = lambda z: _angle_for_x(_front_out_x(z) - A_OVERLAP_F, z, True, _a_lift(z)) - math.tau  # noqa: E731
+    e0 = lambda z: _angle_for_x(_front_out_x(z) + A_GAP_F, z, True, _a_lift(z)) - math.tau  # noqa: E731
     e1 = lambda z: _angle_for_x(_back_out_x(z, A_BACK_X), z, False, _a_lift(z))  # noqa: E731
     return e0, e1
 
@@ -472,19 +584,19 @@ def build():
     objs = []
 
     fp = front_panel()
-    k_out = _rows_up_to(fp, len(fp.us) - 1, SIDE_A["front_z"] + 0.06)
+    k_out = fp.nr + 1                    # outer edge runs on under layer A: no binding there
     f_l = _sheet("skirt_front_L", fp)
     ft_l = _trim("skirt_front_trim_L", fp, _path_main(fp, k_out))
-    ef = _emblem("skirt_emblem_front_L", fp, *EMB_FRONT, front=True)
+    ef = _emblem("skirt_emblem_front_L", fp, *EMB_FRONT, front=True, clear=0.0012)
 
     bp = back_panel()
-    k_out = _rows_up_to(bp, len(bp.us) - 1, SIDE_A["back_z"] + 0.06)
+    k_out = _rows_up_to(bp, len(bp.us) - 1, SIDE_A["back_z"] + 0.03)
     b_l = _sheet("skirt_back_L", bp)
     path = _path_main(bp, k_out)
     k_vent = next(k for k in range(bp.nr + 1) if bp.Q[k][0][1] < VENT_TOP + 0.04)
     path = [p for p in path if not (p[1] == 0 and 0 < p[0] < k_vent and p[0] % 2)]   # straight part: every 2nd
     bt_l = _trim("skirt_back_trim_L", bp, path)
-    eb = _emblem("skirt_emblem_back_L", bp, *EMB_BACK, front=False)
+    eb = _emblem("skirt_emblem_back_L", bp, *EMB_BACK, front=False, clear=0.0003)
     ev = _emblem("skirt_emblem_vent", bp, *EMB_VENT, front=False, crescents=False, clear=T_RISE + 0.001)
 
     pa = side_a()

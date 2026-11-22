@@ -34,7 +34,7 @@ from infantry import lib, spec
 
 C = spec.CLOTH
 OFF = C["coat_offset"]
-BELT_LO, BELT_HI = C["belt_z"]
+BELT_HI = C["belt_z"][1]               # belt top: trims and stitches start above it
 BELT_MAX = 0.036                         # DETAIL_PASS v2: inside the belt zone nothing exceeds body + 0.036
 Z_BOTTOM = C["coat_split_z"] + 0.010     # 1.195: coat torso ends under the belt (DETAIL_PASS v2 seam)
 ARMPIT_Z = spec.armhole_ring(16)[8].z
@@ -62,7 +62,7 @@ YOKE_Z = 1.515               # yoke lower edge at the centre back ...
 YOKE_DROP = (0.022, 0.150)   # ... and how far it falls by x = +-0.150 (nearly flat, drops at the shoulders)
 YOKE_APEX = 0.004            # small point at the centre
 BACK_SEAM_X = (0.135, 0.055) # double piped princess seams: x at the yoke -> x at the waist
-EMBLEM_SIZE = 0.060          # dagger-cross: ~0.20 m tall (3.3 x size), top tip just under the yoke edge
+EMBLEM_SIZE = 0.064          # dagger-cross: ~0.20 m tall (3.3 x size), top tip just under the yoke edge
 # side_torso.png / callout_collar.png
 COLLAR_OPEN_TOP = 68.0       # half-angle (deg from front) of the collar's front opening at the top
 COLLAR_DROP = 0.040          # top edge falls from collar_top_z at the back to the front points (side view)
@@ -553,13 +553,19 @@ def _shell(outer, inner, faces, back=True):
     return verts, out
 
 
+def _off(off, z):
+    """Offsets are numbers, or functions of height (a panel that gets thinner where it rolls into the collar)."""
+    return off(z) if callable(off) else off
+
+
 def _panel(name, S, M, off, thick, back=False, topo="main", under=False):
     """Wrap a pattern mesh onto the coat: outer surface at +off, underside at +off-thick."""
     outer, inner = [], []
     for u, z in M.pts:
         p, n = S.at(u, z, back)
-        outer.append(p + n * off)
-        inner.append(p + n * (off - thick))
+        o = _off(off, z)
+        outer.append(p + n * o)
+        inner.append(p + n * (o - thick))
     return lib.mesh_object(name, *_shell(outer, inner, M.faces, back=under), topo=topo)
 
 
@@ -567,7 +573,7 @@ def _line_on(S, pts_xz, back=False, off=0.0):
     """Reference (x, z) poly line -> points on the coat (+off) and normals."""
     P, N = [], []
     for x, z in pts_xz:
-        p, n = S.point(x, z, back, off)
+        p, n = S.point(x, z, back, _off(off, z))
         P.append(p)
         N.append(n)
     return P, N
@@ -704,7 +710,7 @@ def _collar(S):
 
 # ============================================================================ front
 LAPEL_TRIM = dict(width=0.011, thickness=0.003, sink=0.0008)   # raised border band (front_torso)
-LAPEL_TRIM_IN, LAPEL_STITCH_IN = 0.008, 0.020
+LAPEL_TRIM_IN, LAPEL_STITCH_IN = 0.0058, 0.018
 
 
 def _lapel_border(name, S, corners, off):
@@ -730,8 +736,11 @@ def _front(S, lapel_top_z):
     bc = _poly_n([P, Mb, B], 12)
     ca = _poly_n([B, Vv, T], 12)
     Mp = _tri_patch(Pattern(), [uz(p) for p in ab], [uz(p) for p in bc], [uz(p) for p in ca]).relax(60)
-    lapel_off = 2 * FLAP_OFF
-    objs.append(_panel("coat_lapel_L", S, Mp, lapel_off, lapel_off - 0.002))
+    def lapel_off(z):
+        """Full 16 mm over the flap, thinning to 10 mm where the lapel rolls up into the collar."""
+        t = min(max((z - LAPEL_BEND[1]) / (T.y - LAPEL_BEND[1]), 0.0), 1.0)
+        return 2 * FLAP_OFF + (FLAP_OFF + 0.002 - 2 * FLAP_OFF) * t
+    objs.append(_panel("coat_lapel_L", S, Mp, lapel_off, 2 * FLAP_OFF - 0.002))
     objs += [_join(_lapel_border("coat_lapel_L_trim", S, [T, Vv, B, Mb, P], lapel_off), "coat_lapel_L_trim")]
 
     # ---- under lapel (wearer's right): visible part T2 -> P2 -> M2 -> X1, tucked 12 mm under the big one
@@ -785,7 +794,11 @@ def _front(S, lapel_top_z):
     hyp[-1] = BLt
     _tri_patch(Mf, [uz(p) for p in _line(BLt, BRt, 9)], [uz(p) for p in _line(BRt, TR, 5)], [uz(p) for p in hyp])
     Mf.relax(40)
-    objs.append(_panel("coat_front_flap", S, Mf, FLAP_OFF, FLAP_OFF))
+    def flap_off(z):
+        """8 mm step, eased down inside the belt zone so nothing exceeds body + BELT_MAX there."""
+        t = min(max((z - BELT_HI) / 0.015, 0.0), 1.0)
+        return FLAP_OFF + (BELT_MAX - OFF - 0.0015 - FLAP_OFF) * (1.0 - t)
+    objs.append(_panel("coat_front_flap", S, Mf, flap_off, FLAP_OFF - 0.0015))
     zs = BELT_HI + 0.004
     edge = [V((FLAP_EDGE_X, zs)), V((FLAP_EDGE_X, B.y + 0.002))]
     objs.append(_join(_double("coat_flap_stitch", S, [edge[1], edge[0]], off=FLAP_OFF, kind=STITCH, gap=0.006,
@@ -809,7 +822,7 @@ def _front(S, lapel_top_z):
     cen_l = (T + P + B) / 3
     for k, (pk, cen, off) in enumerate(((P, cen_l, lapel_off), (P2, (T2 + P2 + X1) / 3, r_off))):
         q = pk + (cen - pk).normalized() * PEAK_BUTTON_IN
-        p, n = S.point(q.x, q.y, off=off - 0.001)
+        p, n = S.point(q.x, q.y, off=_off(off, q.y) - 0.001)
         parts.append(lib.rivet(f"btnp{k}", radius=0.011, height=0.007, n=12, loc=p, normal=n))
     objs.append(_join(parts, "coat_buttons", topo="rigid"))
     return objs
