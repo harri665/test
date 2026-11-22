@@ -184,6 +184,9 @@ def lower_c(z):
 
 # ================================================================== TROUSERS
 NP, NL = 40, 24                 # pelvis ring / leg ring vertex counts (leg = NP/2 - 1 pelvis verts + 5 gusset)
+NK = 40                         # knee + blouse ring count (~1.2 cm at the knee, ~1.6 cm round the blouse)
+SPLIT = set(range(1, NL, 3))    # thigh-ring segments split 1 -> 3 in the 24 -> 40 transition band
+assert NL + 2 * len(SPLIT) == NK
 GAP = 0.016                     # inner thighs never get closer to the mirror plane than this
 CROTCH_Z = S.TORSO[0][0]
 Z_SPLIT = CROTCH_Z + 0.015      # last full pelvis ring; the crotch gusset hangs below it
@@ -217,8 +220,8 @@ BLOUSE_ROWS = [
 ]
 # then a slim gathered gaiter round the shin, tucked over the boot rim into the boot:
 # (z, offset from the boot shaft surface, sag weight)
-TUCK_ROWS = [(0.2890, 0.0060, 0.9), (0.2740, 0.0042, 0.4), (0.2610, 0.0032, 0.0), (0.2505, 0.0026, 0.0),
-             (0.2490, -0.0006, 0.0), (0.2470, -0.0044, 0.0), (0.2400, -0.0055, 0.0), (0.2280, -0.0060, 0.0)]
+TUCK_ROWS = [(0.2890, 0.0075, 0.9), (0.2790, 0.0068, 0.55), (0.2690, 0.0060, 0.2), (0.2595, 0.0048, 0.0),
+             (0.2505, 0.0026, 0.0), (0.2490, -0.0006, 0.0), (0.2470, -0.0044, 0.0), (0.2300, -0.0060, 0.0)]
 SAG = 0.008                     # how far the hem droops (most at the front)
 
 
@@ -286,13 +289,33 @@ def _pelvis_pt(i, z):
     return pu.lerp(V((sx, sy, z - dz)), s)
 
 
-def _leg_ring(z, side, k=None, r=None, sag=0.0):
+def _leg_ring(z, side, k=None, r=None, sag=0.0, n=NL, folds=True, ths=None):
     r = _thigh_r(z) if r is None else r
     pts = []
-    for j in range(NL):
-        p = trouser_pt(z, r, TAU * j / NL, side, dip=_DIP.get(k, 0.0), seat=_SEAT.get(k, 0.0), sag=sag)
+    for th in (ths or [TAU * j / n for j in range(n)]):
+        p = trouser_pt(z, r, th, side, dip=_DIP.get(k, 0.0), seat=_SEAT.get(k, 0.0), sag=sag, folds=folds)
         pts.append(V((p.x * side, p.y, p.z)))
     return pts
+
+
+def _transition(mb, top, bot):
+    """All-quad band from the NL-vertex thigh ring `top` to the NK-vertex ring `bot` (both closed, same
+    winding, index 0 = outer side).  Segments in SPLIT become 3 segments each (3-to-1 pattern:
+    two mid-height vertices, four quads)."""
+    P = mb.v
+    b = 0
+    for j in range(NL):
+        t0, t1 = top[j], top[(j + 1) % NL]
+        if j in SPLIT:
+            b0, b1, b2, b3 = (bot[(b + k) % NK] for k in range(4))
+            m1 = mb.add([(P[b1] + P[t0].lerp(P[t1], 0.36)) * 0.5])[0]
+            m2 = mb.add([(P[b2] + P[t0].lerp(P[t1], 0.64)) * 0.5])[0]
+            mb.f += [(t0, m1, b1, b0), (m1, m2, b2, b1), (m2, t1, b3, b2), (t0, t1, m2, m1)]
+            b += 3
+        else:
+            mb.f.append((t0, t1, bot[(b + 1) % NK], bot[b % NK]))
+            b += 1
+    assert b == NK
 
 
 def build_trousers():
@@ -325,8 +348,7 @@ def build_trousers():
         ring = [pel(j) for j in range(0, hb)] + bridge + [pel(j) for j in range(hf + 1, NP)]
         assert len(ring) == NL
         base = [mb.v[i].copy() for i in ring]
-        pts = None
-        for k, z in enumerate(THIGH_Z):
+        for k, z in enumerate(THIGH_Z[:-1]):
             pts = _leg_ring(z, side, k)
             w = _UNTWIST.get(k, 1.0)
             for j, p in enumerate(pts):
@@ -334,6 +356,11 @@ def build_trousers():
             new = mb.add(pts)
             mb.strip(ring, new, closed=True)
             ring = new
+        # last thigh band: 24 -> 40 vertices (8 all-quad 1->3 splits), so the knee + blouse get the
+        # ring density their wrinkles need.  Hidden under the coat skirt / under skirt.
+        pts = _leg_ring(THIGH_Z[-1], side, len(THIGH_Z) - 1, n=NK)
+        bottom = mb.add(pts)
+        _transition(mb, ring, bottom)
         bottoms[side] = pts
     return mb.obj("trousers", "main", sharp_angle=75), bottoms
 
@@ -342,22 +369,211 @@ def _knee_r(z):
     return _lerp(_thigh_r(KNEE_ROWS[0]), BLOUSE_ROWS[0][1] - 0.006, (KNEE_ROWS[0] - z) / (KNEE_ROWS[0] - KNEE_ROWS[-1]))
 
 
+# ------------------------------------------------------------------ wrinkles (round 4)
+# Ridges are designed in (angle in degrees, z) on the LEFT leg: angle 0 = outer side, 90 = back,
+# 180 = inner, 270 = front.  They are converted to lib.fold_ridges' unrolled metres per ring
+# (s = arc length at that ring, period = its circumference, l = z), so widths stay true metres.
+WR_TOP = KNEE_ROWS[0]            # boundary with the thigh tube: no displacement there
+ENV_Z = (0.368, 0.392)           # at z >= 0.40 crests may only grow the envelope by ENV_CAP
+ENV_CAP = 0.0025
+
+
+def _R(pts, amp, width, sharp=0.6):
+    return dict(pts=pts, amp=amp, width=width, sharp=sharp)
+
+
+def _ridges(side):
+    """All wrinkle ridges of one leg.  The right leg gets its own jitter so the legs don't mirror."""
+    import random
+    rnd = random.Random(11 if side > 0 else 29)
+
+    def j(pts, da=6.0, dz=0.006):
+        sa, sz = rnd.uniform(-da, da), rnd.uniform(-dz, dz)
+        return [(a + sa + rnd.uniform(-2.0, 2.0), z + sz * (0.3 + 0.7 * (0.47 - z) / 0.2)) for a, z in pts]
+
+    def k(a):
+        return a * rnd.uniform(0.85, 1.15)
+    R = []
+    # 1 - blouse drape folds: long crests running down the overhang into the pinch at the hem / gather;
+    #     deepest on the visible lower half (z < 0.40, below the coat skirt), fading out under it
+    R += [_R(j([(238, 0.440), (245, 0.375), (252, 0.318), (257, 0.280)]), k(0.0100), 0.016, 0.7),
+          _R(j([(281, 0.452), (279, 0.380), (275, 0.318), (271, 0.280)]), k(0.0120), 0.017, 0.7),
+          _R(j([(325, 0.445), (318, 0.378), (309, 0.318), (302, 0.280)]), k(0.0120), 0.017, 0.7),
+          _R(j([(10, 0.448), (3, 0.378), (353, 0.318), (346, 0.280)]), k(0.0110), 0.017, 0.7),
+          _R(j([(64, 0.440), (55, 0.375), (45, 0.316), (40, 0.280)]), k(0.0095), 0.016, 0.7),
+          _R(j([(122, 0.435), (114, 0.368), (106, 0.314), (102, 0.280)]), k(0.0080), 0.016, 0.7),
+          _R(j([(176, 0.430), (172, 0.365), (168, 0.300)]), k(0.0050), 0.018)]
+    # ... creases (valleys) between them, deepest where the cloth pools over the gather
+    R += [_R(j([(a0, 0.430), (a1, 0.355), (a2, 0.290)], 4.0), -k(0.0075), 0.014, 0.5)
+          for a0, a1, a2 in ((260, 262, 263), (303, 299, 290), (347, 340, 326), (37, 29, 22), (93, 86, 76),
+                             (150, 144, 138), (210, 214, 218))]
+    # 2 - sag folds: shallow U crests hanging between the drape folds (front and outer side)
+    R += [_R(j([(285, 0.388), (292, 0.358), (300, 0.347), (309, 0.358), (315, 0.386)], 3.0, 0.004),
+             k(0.0085), 0.015, 0.7),
+          _R(j([(328, 0.376), (334, 0.349), (342, 0.341), (350, 0.350), (356, 0.374)], 3.0, 0.004),
+             k(0.0075), 0.015, 0.7),
+          _R(j([(250, 0.370), (256, 0.347), (263, 0.343), (270, 0.355)], 3.0, 0.004), k(0.0060), 0.016)]
+    # 3 - knee: horizontal compression folds over the front of the knee (on the support loops) ...
+    R += [_R(j([(228, 0.554), (256, 0.549), (282, 0.552), (314, 0.557)], 5.0, 0.0), k(0.0085), 0.012, 0.7),
+          _R(j([(236, 0.530), (264, 0.526), (292, 0.530), (320, 0.535)], 5.0, 0.0), k(0.0090), 0.012, 0.7),
+          _R(j([(242, 0.495), (272, 0.490), (302, 0.495)], 5.0, 0.0), k(0.0060), 0.014, 0.65),
+          _R([(244, 0.540), (272, 0.538), (302, 0.541)], -0.0055, 0.010, 0.5),
+          _R([(248, 0.511), (274, 0.509), (300, 0.512)], -0.0055, 0.012, 0.5)]
+    # ... and long diagonal folds from the knee toward the outer calf
+    R += [_R(j([(262, 0.515), (298, 0.478), (334, 0.440), (2, 0.405)], 4.0, 0.003), k(0.0070), 0.016, 0.65),
+          _R(j([(296, 0.540), (326, 0.505), (356, 0.468), (22, 0.432)], 4.0, 0.003), k(0.0060), 0.015, 0.65)]
+    # 4 - behind the knee: small zig-zag compression folds
+    for r in lib.zigzag_ridges(0.0, 0.085, 0.507, 0.566, 3, amp=0.0055, width=0.012, sharp=0.6,
+                               seed=0.4 if side > 0 else 2.2):
+        R.append(_R([(62 + s / 0.47 * 360.0, l) for s, l in r["pts"]], r["amp"], r["width"], r["sharp"]))
+    # 5 - gather above the boot: bunched zig-zag crests ringing the leg, a tier per sector, sectors offset
+    for q in range(5):
+        a0 = q * 72.0 + (8.0 if side > 0 else 31.0)
+        dz = 0.004 * math.sin(2.3 * q + side)
+        for r in lib.zigzag_ridges(0.0, 0.050, 0.254 + dz, 0.288 + dz, 2, amp=0.0075, width=0.0110, sharp=0.65,
+                                   seed=q * 1.7 + (0.0 if side > 0 else 0.9)):
+            R.append(_R([(a0 + s / 0.40 * 360.0, l) for s, l in r["pts"]], r["amp"], r["width"], r["sharp"]))
+    return R
+
+
+def _ring_len(pts):
+    return sum((pts[(i + 1) % len(pts)] - pts[i]).length for i in range(len(pts)))
+
+
+def _warp(z, ridges, C, n=NK):
+    """Ring parameter angles (radians) for a ring at height z: uniform, except that the vertex nearest to
+    each place where a (mostly vertical) fold crest / crease crosses this height is slid onto it, so the
+    edge flow follows the folds and every crest gets a real vertex column (no aliasing)."""
+    feats = []
+    for r in ridges:
+        P = r["pts"]
+        if abs(r["amp"]) < 0.0035:
+            continue
+        L = [math.hypot((P[i + 1][0] - P[i][0]) / 360.0 * C, P[i + 1][1] - P[i][1]) for i in range(len(P) - 1)]
+        acc = 0.0
+        for i in range(len(P) - 1):
+            (a0, z0), (a1, z1) = P[i], P[i + 1]
+            a1 = a0 + ((a1 - a0 + 180.0) % 360.0 - 180.0)
+            if (z0 - z) * (z1 - z) <= 0 and abs(z1 - z0) > 0.8 * abs(a1 - a0) / 360.0 * C:
+                t = (z - z0) / (z1 - z0) if z1 != z0 else 0.5
+                pos = (acc + t * L[i]) / (sum(L) or 1.0)
+                if 0.06 < pos < 0.94:
+                    feats.append((abs(r["amp"]) * math.sin(math.pi * pos), (a0 + t * (a1 - a0)) % 360.0))
+            acc += L[i]
+    step = 360.0 / n
+    anchors = {}
+    for w, a in sorted(feats, reverse=True):
+        j = int(round(a / step)) % n
+        if any(((j + o) % n) in anchors for o in (-1, 0, 1)):
+            continue
+        anchors[j] = a
+    if not anchors:
+        return [TAU * j / n for j in range(n)]
+    ks = sorted(anchors)
+    # unwrap anchor angles so they increase with the index, then drop the ones that squeeze a gap too much
+    out = []
+    for j in ks:
+        a = anchors[j]
+        while a - j * step > 180.0:
+            a -= 360.0
+        while a - j * step < -180.0:
+            a += 360.0
+        out.append((j, a))
+    ok = True
+    while ok and len(out) > 1:
+        ok = False
+        for i in range(len(out)):
+            (j0, a0), (j1, a1) = out[i], out[(i + 1) % len(out)]
+            dj = (j1 - j0) % n or n
+            da = (a1 - a0) % 360.0 if len(out) > 1 else 360.0
+            if not 0.55 * dj * step <= da <= 1.6 * dj * step:
+                out.pop(i)
+                ok = True
+                break
+    ths = [0.0] * n
+    m = len(out)
+    for i in range(m):
+        (j0, a0), (j1, a1) = out[i], out[(i + 1) % m]
+        dj = (j1 - j0) % n or n
+        da = (a1 - a0) % 360.0 or 360.0
+        for q in range(dj):
+            ths[(j0 + q) % n] = math.radians((a0 + da * q / dj) % 360.0)
+    return ths
+
+
+def _wrinkle_ring(pts, ths, z, ridges, side, weight=1.0):
+    """Displace one ring along its outward (horizontal) normal by the ridge field at nominal height z.
+    ths = the ring's parameter angles (s = th / tau * circumference, the unit the ridges are converted with)."""
+    n = len(pts)
+    C = _ring_len(pts)
+    conv = [dict(r, pts=[((a % 360.0) / 360.0 * C, l) for a, l in r["pts"]]) for r in ridges]
+    for r in conv:                             # unwrap poly lines that cross angle 0 (s is periodic)
+        P = r["pts"]
+        for i in range(1, len(P)):
+            while P[i][0] - P[i - 1][0] > C / 2:
+                P[i] = (P[i][0] - C, P[i][1])
+            while P[i][0] - P[i - 1][0] < -C / 2:
+                P[i] = (P[i][0] + C, P[i][1])
+    cx = sum(p.x for p in pts) / n
+    cy = sum(p.y for p in pts) / n
+    d = [weight * lib.fold_ridges(th / TAU * C, z, conv, period=C) for th in ths]
+    w = _sstep((z - ENV_Z[0]) / (ENV_Z[1] - ENV_Z[0]))
+    top = max(d)
+    if w > 0 and top > ENV_CAP:                  # under the coat skirt: crests flattened to ENV_CAP, creases kept
+        f = 1.0 - w * (1.0 - ENV_CAP / top)
+        d = [x * f if x > 0 else x for x in d]
+    out = []
+    for i, p in enumerate(pts):
+        t = pts[(i + 1) % n] - pts[i - 1]
+        nh = V((t.y, -t.x, 0.0)) * side
+        if nh.dot(V((p.x - cx, p.y - cy, 0.0))) < 0:
+            nh = -nh
+        out.append(p + nh.normalized() * d[i])
+    return out
+
+
+# lower-leg rows below the knee loops: (z, radius, sag) resampled from BLOUSE_ROWS at ~1.5 cm
+_BU = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 7.0, 8.0, 9.0]
+
+
+def _blouse_rows():
+    z0, r0 = KNEE_ROWS[-1], _knee_r(KNEE_ROWS[-1])
+    rows = [(0.5 * (z0 + BLOUSE_ROWS[0][0]), 0.5 * (r0 + BLOUSE_ROWS[0][1]) + 0.0012, 0.0)]
+    return rows + [_catmull(BLOUSE_ROWS, u) for u in _BU]
+
+
 def build_knee_and_blouse(side, top_ring):
-    """Knee band (support) + bloused lower leg (main) for one side.  Both share their boundary ring."""
-    knee = [top_ring] + [_leg_ring(z, side, r=_knee_r(z)) for z in KNEE_ROWS[1:]]
+    """Knee band (support) + bloused lower leg (main) for one side.  Both share their boundary ring.
+    Rings are NK around; all wrinkles are displacements of these rings along their outward normal, with
+    the ring vertices slid onto the fold lines (see _warp)."""
+    ridges = _ridges(side)
     sfx = "L" if side > 0 else "R"
+
+    def ring_of(make, z, weight=1.0):
+        C = _ring_len(make([TAU * j / NK for j in range(NK)]))
+        ths = _warp(z, ridges, C)
+        return _wrinkle_ring(make(ths), ths, z, ridges, side, weight)
+    knee = [top_ring]
+    for z in KNEE_ROWS[1:]:
+        knee.append(ring_of(lambda ths, z=z: _leg_ring(z, side, r=_knee_r(z), folds=False, ths=ths), z))
     knee_ob = lib.lofted("trouser_knee_" + sfx, knee, topo="support", sharp_angle=75)
     rings = [knee[-1]]
-    for z, r, sag in BLOUSE_ROWS:
-        rings.append(_leg_ring(z, side, r=r, sag=sag))
-    for z, d, sw in TUCK_ROWS:
+    for z, r, sag in _blouse_rows():
+        rings.append(ring_of(lambda ths, z=z, r=r, sag=sag: _leg_ring(z, side, r=r, sag=sag, folds=False, ths=ths), z))
+
+    def tuck(ths, z, d, sw):
         ring = []
-        for j in range(NL):
-            th = TAU * j / NL
+        for th in ths:
             p = boot_rel_pt(z, d, th)
             p.z -= sw * SAG * _sag(th, side, 0.2935)
             ring.append(V((p.x * side, p.y, p.z)))
-        rings.append(ring)
+        return ring
+    for z, d, sw in TUCK_ROWS:
+        if z > BOOT_TOP + 0.004:                 # the part tucked over / into the rim stays undisturbed
+            rings.append(ring_of(lambda ths, z=z, d=d, sw=sw: tuck(ths, z, d, sw), z,
+                                 _sstep((z - BOOT_TOP - 0.004) / 0.008)))
+        else:
+            rings.append(tuck([TAU * j / NK for j in range(NK)], z, d, sw))
     blouse = lib.lofted("trouser_blouse_" + sfx, rings, topo="main", sharp_angle=75)
     return [knee_ob, blouse]
 
