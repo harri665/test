@@ -504,6 +504,8 @@ def outer_radius(a_deg, z):
         if p.covers(a, zq):
             best = max(best, p.lift_at(a, zq))
     q = surf(a, zq, best)
+    if BAR_TIP <= zq <= BAR_TOP and q.y > 0 and abs(q.x) < BAR_W * 1.6:   # the raised bar on the tab
+        q = surf(a, zq, best + BAR_H)
     return math.hypot(q.x, q.y)
 
 

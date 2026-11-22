@@ -67,9 +67,9 @@ CROWN_FRONT_NARROW = 0.07          # FBX top view: crown is egg-shaped, narrower
 CREASE_DEPTH = 0.0105              # FBX: centre crease dips the top (deepest toward the front)
 CREASE_W = 0.024
 PINCH_A = math.radians(40)         # FBX: two deep pinch dents this far either side of the front
-PINCH_Z = (1.836, 1.882)           # ... spanning this height
-PINCH_HW = math.radians(17)        # ... and this half width
-PINCH_DEPTH = 0.0165
+PINCH_Z = (1.834, 1.886)           # ... spanning this height
+PINCH_HW = math.radians(21)        # ... and this half width
+PINCH_DEPTH = 0.0210
 
 
 def _crown_r(z):
@@ -89,8 +89,8 @@ _NECK = [(Z_NECK_END, 0.0710, 0.0750, 0.005, 0.0040),
          (1.604, 0.0460, 0.0500, 0.000, 0.0)]     # slim neck above the hem (FBX neck ~ +-0.041)
 # jaw loops: z at front / side / back, rx, cy, front depth, back depth, front exponent
 _JAW = [dict(zf=1.618, zs=1.624, zb=1.628, rx=0.0425, cy=-0.002, df=0.0500, db=0.0500, ef=2.0),   # throat / nape
-        dict(zf=1.631, zs=1.650, zb=1.645, rx=0.0445, cy=-0.008, df=0.0660, db=0.0600, ef=1.3),   # under the jaw
-        dict(zf=1.640, zs=1.672, zb=1.664, rx=0.0510, cy=-0.010, df=0.0770, db=0.0680, ef=1.25)]  # jawline + V chin
+        dict(zf=1.630, zs=1.652, zb=1.645, rx=0.0415, cy=-0.008, df=0.0720, db=0.0600, ef=1.3),   # under the jaw
+        dict(zf=1.638, zs=1.673, zb=1.664, rx=0.0525, cy=-0.010, df=0.0790, db=0.0680, ef=1.25)]  # jawline + V chin
 # planar skull sections (z, half width, front depth, back depth) about HEAD_CENTER
 _HEAD_KEYS = [(1.664, 0.0510, 0.0770, 0.0680),     # guide only (matches the jawline loop at the back)
               (1.690, 0.0548, 0.0800, 0.0775),     # cheeks
@@ -106,8 +106,8 @@ _HEAD_POW = 2.05
 # ------------------------------------------------------------------ ears (FBX "Neck" ears, scaled)
 EAR_ZC = 1.728                     # FBX ear z 1.699..1.764
 EAR_FRONT_Y = -0.0105              # front edge just behind the mask's rear edge / sideburn
-EAR_W, EAR_H = 0.033, 0.061
-EAR_FLARE = math.radians(22)       # back of the ear stands out from the skull (FBX front view)
+EAR_W, EAR_H = 0.035, 0.062
+EAR_FLARE = math.radians(27)       # back of the ear stands out from the skull (FBX front view)
 EAR_LEAN = math.radians(12)        # top leans back
 N_EAR = 12
 
@@ -140,19 +140,20 @@ _MASK_COLS = [(0.0, 0.0),
 _ROWS_TOP = [0.0, 0.0035, 0.0055, 0.0085, 0.0135, 0.0165]   # metres down from the top edge
 _ROWS_BOT = [0.0055, 0.0035, 0.0]                             # metres up from the V edge
 N_MID = 6
-H_RIM, H_RIDGE, H_CAP, H_SLOT = 0.0035, 0.0080, 0.0090, 0.0025      # FBX: ridges ~1 cm proud
-H_SIDE, H_FLOOR, H_LIGHT, H_CHEV = 0.0068, 0.0, -0.0010, 0.0025
+WALL_MAX = 0.014                   # rim wall runs back into the head (ray-cast), at most this far
+H_RIM, H_RIDGE, H_CAP, H_SLOT = 0.0040, 0.0100, 0.0112, 0.0030      # FBX: ridges ~1 cm proud
+H_SIDE, H_FLOOR, H_LIGHT, H_CHEV = 0.0085, -0.0005, -0.0012, 0.0030
 
 # ------------------------------------------------------------------ hair (FBX "Hair", scaled)
 # left half columns from the front end to the back centre: (plan angle deg, bottom z, kind)
-_HAIR_COLS = [(-9.0, 1.752, "end"), (-5.0, 1.692, "burn"), (0.0, 1.771, "ear"), (8.0, 1.772, "ear"),
-              (16.0, 1.772, "ear"), (24.0, 1.766, "ear"), (33.0, 1.720, "tip"), (42.0, 1.730, "notch"),
-              (52.0, 1.694, "tip"), (61.0, 1.706, "notch"), (70.0, 1.676, "tip"), (80.0, 1.690, "notch"),
-              (90.0, 1.657, "tip")]
+_HAIR_COLS = [(-9.0, 1.752, "end"), (-5.0, 1.690, "burn"), (0.0, 1.771, "ear"), (8.0, 1.772, "ear"),
+              (16.0, 1.772, "ear"), (24.0, 1.765, "ear"), (31.0, 1.744, "notch"), (39.0, 1.708, "tip"),
+              (48.0, 1.733, "notch"), (57.0, 1.701, "mid"), (65.0, 1.680, "tip"), (75.0, 1.707, "notch"),
+              (83.0, 1.680, "mid"), (90.0, 1.656, "tip")]
 HAIR_TOP = 1.7925                  # top edge tucked into the skull just under the sweatband (1.795)
 HAIR_Z1 = 1.7895
 HAIR_ROWS = (0.30, 0.60, 0.85, 1.0)
-HAIR_OFF = (0.0080, 0.0100, 0.0092, 0.0070)    # thickness over the skull per row (last = edge)
+HAIR_OFF = (0.0085, 0.0110, 0.0110, 0.0095)    # thickness over the skull per row (last = edge)
 
 
 # ------------------------------------------------------------------ small helpers
@@ -396,11 +397,11 @@ def build_hair(surf):
                 off = HAIR_OFF[min(k - 1, 3)]
                 sweep = f ** 1.5
             if k == len(HAIR_ROWS) + 1:                       # edge: thin pointed tips
-                off = 0.0022 if kind in ("tip", "burn") else 0.0030
+                off = 0.0025 if kind in ("tip", "burn", "mid") else 0.0035
             elif k >= 2:
-                off += {"tip": 0.0016, "notch": -0.0012, "burn": 0.0006}.get(kind, 0.0)
+                off += {"tip": 0.0030, "mid": 0.0018, "notch": -0.0020, "burn": 0.0006}.get(kind, 0.0)
             da = 0.0
-            if kind == "tip":
+            if kind in ("tip", "mid"):
                 da = 4.5 * sweep * back
             elif kind == "notch":
                 da = 2.5 * sweep * back
@@ -481,7 +482,7 @@ def _crown_shape(p):
         d = (a - ap + math.pi) % TAU - math.pi
         r2 = (d / PINCH_HW) ** 2 + ((p.z - zc) / hz) ** 2
         if r2 < 1.0:
-            w = (1.0 - r2) ** 0.55
+            w = (1.0 - r2) ** 0.35
             r = V((p.x, p.y - HAT_CY, 0.0))
             if r.length > 1e-6:
                 q -= r.normalized() * (PINCH_DEPTH * w)
@@ -663,8 +664,8 @@ def build_mask(surf):
             perp.append(q if q.dot(p - cen) > 0 else -q)
         mit = (perp[0] + perp[1]).normalized()
         a = p + mit * 0.0010 - nrm * 0.0016
-        hit = surf.cast(a, -nrm, 0.05)
-        b = hit - nrm * 0.0012 if hit is not None else a - nrm * 0.004
+        hit = surf.cast(a, -nrm, WALL_MAX)
+        b = hit - nrm * 0.0012 if hit is not None else a - nrm * WALL_MAX
         verts.append(a)
         roll.append(len(verts) - 1)
         verts.append(b)

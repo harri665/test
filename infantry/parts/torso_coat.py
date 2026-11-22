@@ -72,11 +72,11 @@ BACK_SEAM_X = (0.100, 0.070) # single seam lines: x at the yoke -> x at the belt
 V_PANEL = ((0.104, 0.188), (0.114, 1.372))   # pointed V panel: top x range under the yoke, tip (x, z)
 EMBLEM_ARM = 0.044           # small cross: side-arm length (FBX head ~0.11 wide), stem to the belt top
 # collar (FBX: tall, open at the front, the back rolls over and flops out / down)
-COL_FOLD_Z = (1.698, 1.686)  # fold line (top of the stand): back / front ends
+COL_FOLD_Z = (1.684, 1.674)  # fold line (top of the stand): back / front ends
 COL_STAND_R = (0.099, 0.110) # stand radii (x, y about the neck centre) at the fold
 COL_OPEN_TOP = 46.0          # half-angle (deg from front) of the front opening at the fold line
 COL_ROLL = 0.006             # radius of the soft roll at the fold
-COL_FALL = ((180.0, 1.632, 0.040), (95.0, 1.616, 0.034), (64.0, 1.545, 0.020))  # (deg from front,
+COL_FALL = ((180.0, 1.624, 0.032), (95.0, 1.610, 0.030), (64.0, 1.545, 0.020))  # (deg from front,
                              # fall edge z, flop past the stand) - back, sides, collar end
 COL_END = 54.0               # the fall is cut back between here and the front end (notch line)
 COL_THICK = 0.006
@@ -832,7 +832,9 @@ def _front(S, lapel_top_z):
         t = min(max((z - LAPEL_BEND[1]) / (T.y - LAPEL_BEND[1]), 0.0), 1.0)
         return 0.018 + (0.011 - 0.018) * t
     objs.append(_panel("coat_lapel_L", S, Mp, lapel_off, 0.016))
-    objs.append(_roll("coat_lapel_L_trim", S, [T, Vv, B, Mb, P, K], lapel_off))
+    # rolled edge on the free outline only (break -> bend -> peak -> notch -> collar); the roll line
+    # T -> V -> B is a soft fold, no tube (FBX)
+    objs.append(_roll("coat_lapel_L_trim", S, [B, Mb, P, K, T], lapel_off, closed=False))
 
     # ---- under lapel (wearer's right): visible part T2 -> notch -> P2 -> M2 -> X1, tucked under the big one
     def isect(a, b, c, d):

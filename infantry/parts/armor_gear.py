@@ -41,15 +41,16 @@ RAD = math.radians
 DEG = math.degrees
 
 # ============================================================================ constants
-# --- C7 shoulder board (left).  Underside z(x, y) = BD_Z0 - BD_SLOPE (x - BD_X0) - BD_ARCH (y - BD_YC)^2
-#     (the coat shoulder dome measures z 1.587 / 1.579 / 1.562 at x 0.16 / 0.20 / 0.24, y 0)
-BD_X0, BD_X1 = 0.165, 0.278       # inner end (beside the collar) .. outer end (overhangs the arm)
-BD_Y0, BD_Y1 = -0.090, 0.088      # front .. back edge (FBX: a long board front-to-back, ~9 x 17 cm)
-BD_YC = -0.008
-BD_Z0 = 1.6045
-BD_SLOPE = 0.20                   # falls gently outward along the shoulder line
-BD_ARCH = 5.6                     # front-to-back arch (front / back legs ~4-5 cm lower than the crown;
-                                  # more would cut into the coat's chest / back yoke at the inner end)
+# --- C7 shoulder board (left): the FBX board is a wide plate arched front-to-back over the shoulder
+#     joint like a horseshoe (side view: crown ~1.61, legs down to ~1.48, ~10 cm wide along X).
+#     Inner surface: circular arch in the YZ plane, centre (BD_YC, BD_ZC(x)), radius BD_R, +-BD_A.
+#     Inner end at x 0.180: further in, the coat chest / back yoke / collar leave no room for the legs.
+BD_X0, BD_X1 = 0.180, 0.282       # inner end .. outer end (overhangs the arm)
+BD_YC = 0.000
+BD_ZC = 1.490                     # arch centre height at the inner end ...
+BD_SLOPE = 0.10                   # ... falling gently outward along the shoulder line
+BD_R = 0.112
+BD_A = RAD(78)                    # legs end at y ~ +-0.110, z ~ 1.51
 BD_T = 0.0070                     # base board
 BD_T2 = 0.0050                    # stacked top plate
 BD_INSET = (0.010, 0.009)         # top plate inset from the base board's edges: x ends, y sides
@@ -286,28 +287,30 @@ def _skirt_pt(th, off, z, half=0.0):
 
 
 # ============================================================================ C7 shoulder board
-def _bd_under(x, y):
-    return BD_Z0 - BD_SLOPE * (x - BD_X0) - BD_ARCH * (y - BD_YC) ** 2
+def _bd_zc(x):
+    return BD_ZC - BD_SLOPE * (x - BD_X0)
 
 
 def _bd_P(u, v):
-    x, y = _lerp(BD_X0, BD_X1, u), _lerp(BD_Y0, BD_Y1, v)
-    return V((x, y, _bd_under(x, y)))
+    x, a = _lerp(BD_X0, BD_X1, u), _lerp(-BD_A, BD_A, v)
+    return V((x, BD_YC + BD_R * math.sin(a), _bd_zc(x) + BD_R * math.cos(a)))
 
 
-def _bd_under_z(x, y):
-    """Height of the board's underside above (x, y); None outside its footprint."""
-    if not (BD_X0 - 0.002 <= x <= BD_X1 + 0.004 and BD_Y0 - 0.004 <= y <= BD_Y1 + 0.004):
+def _bd_inside(q, margin):
+    """> 0 while point q is closer than `margin` to the board's inner surface from inside the arch
+    (or outside it), i.e. the pad must stop growing; None when q is outside the board's X range."""
+    if not (BD_X0 - 0.003 <= q.x <= BD_X1 + 0.006):
         return None
-    return _bd_under(_clamp(x, BD_X0, BD_X1), _clamp(y, BD_Y0, BD_Y1))
+    r = math.hypot(q.y - BD_YC, q.z - _bd_zc(min(q.x, BD_X1)))
+    return r - (BD_R - margin)
 
 
 def _shoulder_board_left():
     parts = []
-    Lx, Ly = BD_X1 - BD_X0, BD_Y1 - BD_Y0
+    Lx, Ly = BD_X1 - BD_X0, 2 * BD_A * BD_R
     ch = 0.0015
     us = _stations([ch], [0.2, 0.4, 0.6, 0.8], Lx)
-    vs = _stations([ch], [k / 8 for k in range(1, 8)], Ly)
+    vs = _stations([ch], [k / 14 for k in range(1, 14)], Ly)
     vs1, fs1, surf1 = _slab(_bd_P, us, vs, lambda i: BD_T, ch=ch)
     parts.append(lib.mesh_object("board_base", vs1, fs1, topo="rigid", sharp_angle=30))
     # stacked top plate, inset, resting on the base board (sunk 0.4 mm so the faces never coincide)
@@ -318,12 +321,12 @@ def _shoulder_board_left():
         return surf1(_lerp(iu0, iu1, u), _lerp(iv0, iv1, v), BD_T - 0.0004)[0]
     Lx2, Ly2 = Lx * (iu1 - iu0), Ly * (iv1 - iv0)
     us2 = _stations([ch], [0.25, 0.5, 0.75], Lx2)
-    vs2 = _stations([ch], [k / 6 for k in range(1, 6)], Ly2)
+    vs2 = _stations([ch], [k / 12 for k in range(1, 12)], Ly2)
     vs_, fs_, surf2 = _slab(P2, us2, vs2, lambda i: BD_T2 + 0.0004, ch=ch)
     parts.append(lib.mesh_object("board_top", vs_, fs_, topo="rigid", sharp_angle=30))
     # plain strap along the crown, from the inner end over the top plate, stopping short of the outer end
     w, t = BD_STRAP
-    vc = (BD_YC - BD_Y0 - Ly * iv0) / Ly2               # top-plate v of the crown line
+    vc = 0.5                                            # top-plate v of the crown line
     hv = w / 2 / Ly2
 
     def P3(u, v):
@@ -368,9 +371,9 @@ def _pd_s_range(phi):
     def above(s):                                        # > 0 while the top edge is too high
         q = _pd_point(s, phi, PD_T)
         cap = cap0
-        zu = _bd_under_z(q.x, q.y)
-        if zu is not None:
-            cap = min(cap, zu - PD_GAP)
+        hit = _bd_inside(q, PD_GAP + PD_LIP[1])
+        if hit is not None and hit > 0:
+            return hit
         return q.z - cap
     lo, hi = -0.06, 0.12
     for _ in range(40):
