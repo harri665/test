@@ -466,3 +466,80 @@ def emblem_ornate(name, size=0.06, thickness=0.004, loc=(0, 0, 0), normal=(0, -1
     ob.data.transform(Matrix.Translation(V(loc)) @ Matrix((x, u, n)).transposed().to_4x4())
     ob.data.update()
     return finalize(ob, sharp_angle=25)
+
+
+def _flat_bar(axis_pts, widths, thickness, bevel=0.35):
+    """Flat relief bar in the local XY plane along a 2D poly line, with per-point half widths.
+    Section is a bevelled 4-gon (base wider than the raised top) -> all quads, quad end caps."""
+    pts = [V((p[0], p[1], 0)) for p in axis_pts]
+    rings = []
+    for i, p in enumerate(pts):
+        a = pts[max(i - 1, 0)]
+        b = pts[min(i + 1, len(pts) - 1)]
+        t = (b - a).normalized()
+        s = V((-t.y, t.x, 0))
+        w = widths[i]
+        rings.append([p - s * w, p - s * w * (1 - bevel) + V((0, 0, thickness)),
+                      p + s * w * (1 - bevel) + V((0, 0, thickness)), p + s * w])
+    verts, faces = loft(rings, closed=True)
+    last = (len(rings) - 1) * 4
+    faces += [(3, 2, 1, 0), (last, last + 1, last + 2, last + 3)]
+    return verts, faces
+
+
+def emblem_gothic(name, height=0.20, thickness=0.004, loc=(0, 0, 0), normal=(0, -1, 0), up=(0, 0, 1),
+                  stem=0.55, topo="rigid"):
+    """The reference's main faction emblem: a gothic cross whose three upper arms end in flared
+    spear tips with two back-curling barbs each, on a long thin tapering stem.
+    `height` = total height; `stem` = share of the height below the cross-bar.  All quads."""
+    h = height
+    bar_z = h * (stem - 0.5)                    # cross-bar height relative to the centre
+    arm = h * 0.21                              # length of the side and top arms
+    w = h * 0.017                               # bar half width
+    parts = []
+
+    def arm_piece(direction, length):
+        d = V((direction[0], direction[1], 0)).normalized()
+        o = V((0, bar_z, 0)) + d * (w * 0.7)     # start inside the boss; keeps arms from sharing verts
+        prof = [(0.0, 1.0), (0.45, 0.85), (0.58, 1.9), (0.72, 2.6), (0.86, 1.5), (1.0, 0.12)]
+        pts = [o + d * (length * f) for f, _ in prof]
+        vs, fs = _flat_bar(pts, [w * k for _, k in prof], thickness)
+        parts.append(mesh_object(name + "_arm", vs, fs, topo=topo, sharp_angle=30))
+        s = V((-d.y, d.x, 0))
+        for side in (-1, 1):                    # two barbs curling back from the flare
+            base = o + d * (length * 0.62) + s * side * w * 1.6
+            pts2, ws2 = [], []
+            for k in range(6):
+                t = k / 5
+                ang = math.radians(25 + 120 * t)
+                r = length * 0.20
+                c = base - d * (r * math.sin(ang) * 0.9) + s * side * (r * (1 - math.cos(ang)) * 0.8)
+                pts2.append(c)
+                ws2.append(w * (0.75 - 0.6 * t))
+            vs, fs = _flat_bar(pts2, ws2, thickness * 0.8)
+            parts.append(mesh_object(name + "_barb", vs, fs, topo=topo, sharp_angle=30))
+
+    arm_piece((0, 1), arm)
+    arm_piece((1, 0), arm)
+    arm_piece((-1, 0), arm)
+    # long stem with a small spear point at the bottom
+    top = bar_z - w * 0.7
+    bot = -h / 2
+    n = 8
+    pts = [V((0, top - (top - bot) * i / n, 0)) for i in range(n + 1)]
+    ws = [w * (1.15 - 0.55 * i / n) for i in range(n + 1)]
+    ws[-2] *= 1.6
+    ws[-1] = w * 0.1
+    vs, fs = _flat_bar(pts, ws, thickness)
+    parts.append(mesh_object(name + "_stem", vs, fs, topo=topo, sharp_angle=30))
+    # boss over the crossing
+    b = rivet(name + "_boss", radius=w * 2.0, height=thickness * 1.4, n=8, loc=(0, bar_z, 0), normal=(0, 0, 1))
+    parts.append(b)
+    ob = join(parts, name, topo=topo)
+    nrm = V(normal).normalized()
+    u = V(up)
+    u = (u - nrm * u.dot(nrm)).normalized()
+    x = u.cross(nrm).normalized()
+    ob.data.transform(Matrix.Translation(V(loc)) @ Matrix((x, u, nrm)).transposed().to_4x4())
+    ob.data.update()
+    return finalize(ob, sharp_angle=25)

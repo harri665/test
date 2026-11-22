@@ -41,11 +41,11 @@ ARM_RADII = dict(shoulder=0.058, bicep=0.052, elbow=0.045, forearm=0.043, wrist=
 
 # ---------------------------------------------------------------- left leg joints
 HIP = V((0.095, 0.000, 0.960))
-KNEE = V((0.135, -0.010, 0.540))
-ANKLE = V((0.155, 0.005, 0.100))
-TOE = V((0.195, -0.195, 0.000))              # front tip of boot sole (boots splay outward ~12 deg)
-HEEL = V((0.145, 0.115, 0.000))              # back of boot sole
-LEG_RADII = dict(thigh=0.092, knee=0.064, calf=0.060, ankle=0.048)
+KNEE = V((0.135, 0.000, 0.540))
+ANKLE = V((0.155, 0.025, 0.100))          # v3: lower leg sits ~2 cm further back
+TOE = V((0.195, -0.175, 0.000))              # front tip of boot sole (boots splay outward ~12 deg)
+HEEL = V((0.145, 0.140, 0.000))              # back of boot sole
+LEG_RADII = dict(thigh=0.092, knee=0.062, calf=0.050, ankle=0.040)   # v3: slimmer shin -> slim boot shaft
 
 # ---------------------------------------------------------------- clothing layout
 CLOTH = dict(
@@ -59,10 +59,11 @@ CLOTH = dict(
     skirt_tip_z=0.355,        # pointed tips of the front / back panels
     skirt_hem_rx=0.325, skirt_hem_ry=0.200,   # skirt ellipse at hem height (front half)
     skirt_hem_ry_back=0.220,                  # ... the back half is a little fuller
-    front_slit_top_z=1.160,   # front opening is an inverted V that starts right under the buckle ...
+    front_slit_top_z=1.080,   # v3: coat stays closed ~10 cm under the belt (2 buttons), then an inverted V ...
     front_slit_half_w=0.115,  # ... and is this wide (half) at the hem, showing under skirt + legs
     back_vent_top_z=1.000, back_vent_half_w=0.020,
-    under_skirt_hem_z=0.400,  # pleated inner skirt, visible in the front opening
+    under_skirt_hem_z=0.400,  # FLAT inner skirt with 2-3 vertical seams, visible in the front opening
+    hip_tier=(1.000, 0.780),  # v3: hip-length upper tier over sides + back: hem z at its front ends / back tail
     collar_top_z=1.680,       # tall stand-up collar reaches the cheeks
     collar_top_r=(0.122, 0.130),
     pauldron_bottom_z=1.360,  # shoulder armour covers upper arm down to here
@@ -77,7 +78,7 @@ CLOTH = dict(
 )
 
 # quad budget per part file (whole character ceiling: 31k quads / 62k triangles)
-BUDGET = dict(head_hat=3000, torso_coat=5000, arms=7000, armor_gear=5000, skirt=5500, legs=5000)
+BUDGET = dict(head_hat=3000, torso_coat=5000, arms=7000, armor_gear=5000, skirt=6200, legs=5000)
 
 
 def _lerp(a, b, t):

@@ -139,3 +139,14 @@ python3 tools/preview.py <your_part> --zoom cx,cy,cz,half_h -o ...             #
   panel on the instep, a wide ankle strap with a big square buckle and a top cuff strap.
 * Remove the duplicated knee overlay bands (tag the tight knee loops themselves as `support` by making
   them their own object), keep hidden pelvis/thigh coarse.
+
+# Round 3 - fixes from the independent review
+
+An independent reviewer (who never saw the code) compared assembled renders against `docs/ref/`.
+Likeness after round 2: FRONT 7/10, SIDE 5/10, BACK 6.5/10. Proportions are within ~5%; the gaps are
+design details. Spec is now **v3**: lower leg ~2 cm further back and slimmer shin, coat front stays
+closed 10 cm under the belt (`front_slit_top_z` 1.08), new `hip_tier`, skirt budget 6200.
+New helper `lib.emblem_gothic` = the reference's main emblem (gothic cross with flared barbed tips on a
+long stem) - use it for the back of the coat, the upper-arm guards and as the base of the skirt emblems.
+Each author received a fix list ranked by the review; reviewer renders are in
+`scratchpad/review/`.
