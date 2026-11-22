@@ -233,12 +233,12 @@ BUNCH_AMP = 0.0100
 # boot collar and into the boot: (z, offset from the tube surface, crumple weight)
 CUFF_Z = (0.153, 0.198)        # wrapped ankle cuff band (FBX: cuff z ~0.15-0.20, square buckle outer side)
 COLLAR_Z, COLLAR_ARCH = 0.116, 0.016     # boot collar height at the back, rise over the instep
-TUBE_ROWS = [(0.2785, 0.0105, 0.0), (0.2735, 0.0062, 0.0), (0.2670, 0.0030, 0.0), (0.2520, 0.0018, 0.0),
+TUBE_ROWS = [(0.2785, 0.0040, 0.0), (0.2735, 0.0028, 0.0), (0.2670, 0.0022, 0.0), (0.2520, 0.0018, 0.0),
              (0.2330, 0.0016, 0.0), (0.2150, 0.0020, 0.0), (0.2050, 0.0030, 0.0), (0.1995, 0.0004, 0.0),
              (0.1760, -0.0004, 0.0), (0.1525, 0.0004, 0.0),
              (0.1490, 0.0040, 0.30), (0.1452, 0.0060, 0.90), (0.1418, 0.0060, 0.60), (0.1388, 0.0040, -0.30),
              (0.1352, 0.0060, 0.80), (0.1316, 0.0060, 1.00), (0.1282, 0.0045, 0.40), (0.1256, 0.0030, -0.30),
-             (0.1224, 0.0050, 0.70), (0.1190, 0.0030, 0.20), (0.1120, 0.0005, 0.0),
+             (0.1224, 0.0040, 0.60), (0.1190, 0.0006, 0.0), (0.1120, 0.0002, 0.0),
              (0.1000, -0.0015, 0.0), (0.0920, -0.0025, 0.0)]
 CRUMPLE_AMP = 0.0085
 _CRUMPLE_GROUP = {0.149: 0, 0.1452: 0, 0.1418: 0, 0.1388: 1, 0.1352: 1, 0.1316: 1, 0.1282: 1, 0.1256: 2,
@@ -389,7 +389,7 @@ def _bunch_ring(z, r, w, k, side):
         th = TAU * j / NL
         mod = 0.50 + 0.60 * math.cos(th - ph) + 0.25 * math.cos(2 * th + 1.7 * ph) + 0.10 * math.cos(5 * th + ph)
         amp = BUNCH_AMP * w * (max(mod, 0.05) if w > 0 else 1.0)
-        dz = (0.0065 * math.sin(th + 0.7 * ph) + 0.0020 * math.sin(3 * th + 2.3 * ph)) * (1.0 if w > 0 else 0.7)
+        dz = 0.0060 * math.sin(th + _phase(side, 0)) + 0.0012 * math.sin(3 * th + 2.3 * ph)   # one tilted bunch
         p = trouser_pt(z, r + amp, th, side, folds=False, dz=dz)
         pts.append(V((p.x * side, p.y, p.z)))
     return pts
@@ -399,7 +399,7 @@ def _tube_z(z, psi):
     """Crumple rows sit between the cuff band bottom and the boot collar, which rises over the instep: rows
     are squeezed into the shorter gap at the front instead of crossing the collar."""
     top, f = 0.150, _front_w(psi)
-    zc = COLLAR_Z + COLLAR_ARCH * f
+    zc = COLLAR_Z + 0.0035 + COLLAR_ARCH * f                    # just above the collar's rolled rim
     if z >= top:
         return z
     if z >= COLLAR_Z:
@@ -421,7 +421,9 @@ def tube_row(z, d, w, k, side):
             ph = _phase(side, 7 + _CRUMPLE_GROUP.get(round(z, 4), 0))    # rows of one fold share a phase
             mod = 0.50 + 0.50 * math.cos(a - ph) + 0.22 * math.cos(2 * a + 1.7 * ph) + 0.08 * math.cos(5 * a + ph)
             dd += CRUMPLE_AMP * w * (min(max(mod, 0.08), 1.1) if w > 0 else 1.0) * (1.0 - 0.55 * f)
-            zz += (0.0030 * math.sin(a + 0.8 * ph) + 0.0012 * math.sin(3 * a + 2.3 * ph)) * (1.0 - f)
+        if 0.118 < z < 0.152:                                   # whole crumple zone tilts as one
+            zz += (0.0028 * math.sin(a + _phase(side, 9)) + 0.0006 * math.sin(3 * a + ph)) * (1.0 - f) \
+                * _sstep((z - 0.118) / 0.008) * _sstep((0.152 - z) / 0.006)
         out.append(tube_pt(zz, a, dd))
     return out
 
@@ -786,15 +788,27 @@ def band(mb, bvh, frames, width, thick, closed=False, clear=0.0007, bevel=0.0):
         hit = bvh.ray_cast(q + nn * 0.04, -nn)
         return (0.04 - hit[3]) if hit[0] is not None else 0.0
     lifts = []
+    NQ = 16
+    fs = [2.0 * k / NQ - 1.0 for k in range(NQ + 1)]           # 17 rays across the width
     for p, t, sx, nn in sec:
-        h = [height(p + sx * (hw * f), nn) + clear for f in (-1.0, -0.5, 0.0, 0.5, 1.0)]
-        L = [h[0], h[2], h[4]]
-        for k, (ia, ib) in ((1, (0, 1)), (3, (1, 2))):          # keep the facets above the half-way rays
-            deficit = h[k] - 0.5 * (L[ia] + L[ib])
+        h = [height(p + sx * (hw * f), nn) + clear for f in fs]
+        L = [h[0], h[NQ // 2], h[NQ]]
+        for ia, ib, ks in ((0, 1, range(1, NQ // 2)), (1, 2, range(NQ // 2 + 1, NQ))):   # facets above every ray
+            deficit = max(h[k] - _lerp(L[ia], L[ib], (k % (NQ // 2)) / (NQ / 2)) for k in ks)
             if deficit > 0:
                 L[ia] += deficit
                 L[ib] += deficit
         lifts.append(L)
+    for i in range(n_f - (0 if closed else 1)):                # mid-span rays: no sag through the shell
+        j = (i + 1) % n_f
+        (p0, t0, s0, n0), (p1, t1, s1, n1) = sec[i], sec[j]
+        pm, sm_, nm = (p0 + p1) * 0.5, (s0 + s1).normalized(), (n0 + n1).normalized()
+        for c, f in enumerate((-1.0, 0.0, 1.0)):
+            need = height(pm + sm_ * (hw * f), nm) + clear
+            deficit = need - 0.5 * (lifts[i][c] + lifts[j][c])
+            if deficit > 0:
+                lifts[i][c] += deficit
+                lifts[j][c] += deficit
     for _ in range(2):                                         # smooth along the strap, never lowering
         new = []
         for i in range(n_f):
@@ -882,7 +896,7 @@ def build_counter(bvh):
         dome = 0.0030 * (1 - abs(t) ** 2)                    # domed at the back of the heel
         rows = [(zb, 0.0045), (_lerp(zb, h - rim - 0.002, 0.40), 0.0050 + dome),
                 (_lerp(zb, h - rim - 0.002, 0.75), 0.0048 + dome * 0.8),
-                (h - rim - 0.0015, 0.0042), (h - rim, 0.0078), (h, 0.0078), (h, 0.0004)]
+                (h - rim - 0.0015, 0.0042), (h - rim, 0.0078), (h, 0.0078), (h, 0.0008)]
         col = []
         for z, off in rows:
             p, n = cast(z, psi)
@@ -897,7 +911,7 @@ def build_counter(bvh):
         wall = []
         for vi in grid[c][:5]:
             q, n = cast(mb.v[vi].z, psi)
-            wall.append(q + n * 0.0004)
+            wall.append(q + n * 0.0008)
         mb.strip(grid[c][:6], mb.add(wall) + [grid[c][6]])
     return mb
 
@@ -941,7 +955,7 @@ def build_straps(upper, counter, side_rows):
         prev = cur
     tb = _bvh([tm])
     fr = []
-    for z in (0.196, 0.212, 0.228, 0.244, 0.258, 0.270):
+    for z in (0.197, 0.2025, 0.208, 0.215, 0.224, 0.233, 0.2425, 0.252, 0.262):
         p = tube_pt(z, 0.0, 0.0)
         hit = tb.ray_cast(p + V((0.05, 0.0, 0.0)), V((-1.0, 0.0, 0.0)))
         fr.append((hit[0] if hit[0] is not None else p, V((1.0, 0.0, 0.0))))

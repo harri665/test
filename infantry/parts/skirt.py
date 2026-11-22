@@ -39,7 +39,8 @@ BELT_Z = (1.195, 1.245)             # I1 belt band
 BELT_CLEAR = 0.036                  # inside the belt zone nothing beyond bare + this
 BELT_ROWS = (1.240, 1.226, 1.212, 1.198, 1.184, 1.165, 1.145, 1.125, 1.100, 1.075, 1.050, 1.020)
 # ^ loops shared by every panel through the belt zone and the hip bend: stacked layers stay parallel
-RAMP = (1.120, 0.880)               # layers open up between these heights (front: under the wrap flap)
+RAMP = (1.120, 0.880)               # layers open up between these heights (thin under the wrap flap,
+                                    # slim over the hips)
 OFF = (0.021, 0.023)                # layer-0 outer surface over the bare torso: belt zone / below
 STEP = (0.0035, 0.0085)             # layer step: belt zone / below
 THICK = (0.0022, 0.0055)            # slab thickness: belt zone / below
@@ -51,9 +52,8 @@ CONE = [(1.300, 0.112, 0.100, 0.100), (1.150, 0.135, 0.120, 0.120), (1.000, 0.17
         (0.800, 0.228, 0.142, 0.177), (0.600, 0.290, 0.150, 0.212), (0.450, 0.330, 0.155, 0.245),
         (0.300, 0.355, 0.160, 0.270), (0.150, 0.375, 0.165, 0.285)]
 
-# trouser outer envelope (z: max|x|, y-front, y-back) measured on the legs mesh; the inner face of
-# layer 0 keeps TROUSER_CLR outside it
-# I5 straight trousers (legs agent, measured on the real meshes)
+# I5 straight trousers (legs agent, measured on the real meshes): z, max|x|, y-front, y-back.  The
+# inner face of layer 0 keeps TROUSER_CLR outside it (then each radius is hulled into a clean cone)
 TROUSER_ENV = [(1.20, 0.119, -0.103, 0.105), (1.15, 0.131, -0.108, 0.113), (1.10, 0.144, -0.113, 0.122),
                (1.05, 0.157, -0.119, 0.130), (1.00, 0.173, -0.117, 0.124), (0.95, 0.188, -0.115, 0.119),
                (0.90, 0.193, -0.106, 0.106), (0.85, 0.196, -0.097, 0.095), (0.80, 0.199, -0.092, 0.090),
@@ -74,7 +74,7 @@ UP_SLOPE = 0.57
 UNDER_EDGE = ((1.085, 0.000), (0.392, -0.126))     # skirt_front_R's inner edge (true x) below the apex
 UNDER_X_TOP = 0.025                 # ... above it, it runs on under skirt_front_L to this true x
 FRONT_OUT = (0.149, 0.236)          # front panels' outer edge x = a + b * (1.0 - z)
-FRONT_HEM = dict(over=(OVER_EDGE[1][0], 0.515), under=(UNDER_EDGE[1][0], 0.505))   # (tip at the opening, outer corner) z
+FRONT_HEM = dict(over=(OVER_EDGE[1][0], 0.515), under=(UNDER_EDGE[1][0], 0.505))   # z: tip, outer corner
 # side front panel: inner edge under the front panel, outer edge fanning to the side, tip there
 SF_IN, SF_OUT, SF_HEM = 0.035, ((1.24, -32.0), (0.46, 0.0)), (0.530, 0.460)
 SF_KICK = (0.022, 0.56, 0.44, 0.45, 1.0)        # its point kicks out (front view: spikes at the sides)
