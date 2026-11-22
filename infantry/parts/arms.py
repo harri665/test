@@ -219,16 +219,16 @@ class Fold:
         """Edge loops of the fold -> [(u, height)], u = offset from the crest down the arm, height in
         units of amp.  Loops bunch at the crest (support loop either side) and the crease."""
         W, D, B = self.rise, self.drop, self.back
-        return [(-W, 0.0), (-0.52 * W, 1.0 - 0.48 ** 2), (-0.0045, 0.985), (0.0, 1.0),
-                (0.42 * D, 0.72), (D, -self.crease), (D + B, 0.0)]
+        return [(-W, 0.0), (-0.55 * W, 1.0 - 0.45 ** 2), (-0.25 * W, 0.955), (-0.0045, 0.99), (0.0, 1.0),
+                (0.42 * D, 0.72), (D, -self.crease), (D + 0.35 * B, -0.45 * self.crease), (D + B, 0.0)]
 
 
 FOLD_LOW_DEG = 140.0                      # folds sag lowest here (front-inner: the elbow pit)
 # sleeve_front_*.png: between the shoulder armour and the cuff only two big folds: the big one half way
 # down the visible sleeve (just above the elbow), the second ~3/4 of the way, then a short clean
 # stretch into the cuff; above them the upper arm is a clean straight column.
-FOLDS = [Fold(0.244, 0.0130, 0.012, 0.030, 0.0070, 0.0120),      # the big elbow fold
-         Fold(0.281, 0.0105, 0.010, 0.018, 0.0060, 0.0110)]      # second fold, between elbow and cuff
+FOLDS = [Fold(0.226, 0.0140, 0.012, 0.030, 0.0070, 0.0130),      # the big elbow fold
+         Fold(0.268, 0.0115, 0.010, 0.019, 0.0060, 0.0120)]      # second fold, between elbow and cuff
 ROW_GAP = 0.016                           # max row spacing on the clean stretches between folds
 
 
@@ -239,7 +239,7 @@ def fold_low(phi):
 
 def fold_amp(phi):
     """The folds wrap all the way round, a little fuller on the inside of the elbow."""
-    return 0.85 + 0.15 * math.cos(phi - math.radians(FOLD_LOW_DEG))
+    return 0.92 + 0.08 * math.cos(phi - math.radians(FOLD_LOW_DEG))
 
 
 def sleeve_rows(l0, l1):
