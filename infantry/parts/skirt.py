@@ -79,8 +79,8 @@ TROUSER_ENV = [(1.20, 0.119, -0.105, 0.105), (1.15, 0.131, -0.109, 0.113), (1.10
                (0.93, 0.200, -0.116, 0.117), (0.90, 0.202, -0.107, 0.107), (0.85, 0.206, -0.106, 0.101),
                (0.80, 0.211, -0.106, 0.099), (0.75, 0.214, -0.102, 0.094), (0.70, 0.216, -0.102, 0.090),
                (0.65, 0.217, -0.100, 0.085), (0.60, 0.219, -0.097, 0.079), (0.55, 0.220, -0.098, 0.077),
-               (0.50, 0.226, -0.095, 0.082), (0.45, 0.238, -0.091, 0.100), (0.40, 0.245, -0.079, 0.115),
-               (0.35, 0.256, -0.074, 0.130), (0.30, 0.255, -0.064, 0.132)]
+               (0.50, 0.226, -0.096, 0.082), (0.45, 0.237, -0.093, 0.098), (0.40, 0.245, -0.084, 0.113),
+               (0.35, 0.254, -0.080, 0.125), (0.30, 0.253, -0.072, 0.125)]
 U_CLEAR, COAT_OVER_UNDER, B_GAP = 0.006, 0.010, 0.024   # B_GAP: room for layer B at the sides
 
 NR_FRONT, NC_FRONT = 27, 7
@@ -167,11 +167,11 @@ def _raw_req(i):
 
 
 def _smooth_req(i):
-    """Running max over +-3 cm, then a +-3 cm mean: no kinks where the trouser model switches."""
+    """Running max over +-2 cm, then a +-2 cm mean: no kinks from the piecewise envelope."""
     if i not in _REQ:
         mx = []
-        for d in range(-6, 7):
-            mx.append([max(_raw_req(i + d + e)[c] for e in range(-6, 7)) for c in range(3)])
+        for d in range(-4, 5):
+            mx.append([max(_raw_req(i + d + e)[c] for e in range(-4, 5)) for c in range(3)])
         _REQ[i] = tuple(sum(m[c] for m in mx) / len(mx) for c in range(3))
     return _REQ[i]
 

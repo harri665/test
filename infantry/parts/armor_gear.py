@@ -57,8 +57,9 @@ GD_T = 0.0050
 GD_TRIM = (0.012, 0.0022)
 GD_PHI = (RAD(-96), RAD(104))   # front edge .. back edge, 0 = straight out from the arm (ref side:
                                 # the guard sits a little behind the arm centre)
-GD_TOP_Z = (1.506, 1.500)  # top edge of the guard: at its outer face / at its front and back legs
-                           # (tucks under the plates; ref 1.50-1.535)
+GD_TOP_Z = (1.570, 1.503)  # top edge cap: at its outer face / at its front and back legs.  The outer
+                           # face continues as a cap over the shoulder joint and stops under the
+                           # under-plate (ref side: the guard runs up under the plate's arch)
 GD_GAP = 0.004           # air between guard top and the under-plate's underside
 
 # belt
@@ -83,6 +84,7 @@ X_DRING_FRONT = 0.113
 X_DRING_BACK = 0.100
 POUCH_FRONT = (0.150, 0.085, 0.130, 0.050)   # centre x, width, height, depth (ref x 0.11 .. 0.19)
 POUCH_BACK = (0.148, 0.080, 0.120, 0.045)    # ref back: |x| 0.10 .. 0.195, z 1.05 .. 1.17
+POUCH_BACK_DROP = 0.016                      # back pouches hang this much lower on their straps
 POUCH_CLR = 0.012
 
 # canister on the wearer's right front hip (ref front: axis x ~-0.15, z 0.89 .. 1.17)
@@ -462,20 +464,35 @@ def _gd_r(s, phi=0.0):
 
 
 def _gd_point(s, phi, extra=0.0):
+    """Guard surface: a tube round the upper arm for s >= 0, continued above the shoulder joint
+    (s < 0) as a spherical cap round spec.SHOULDER, so it can run up under the plates."""
     r = _gd_r(s, phi) + extra
-    return _A0 + _AD * s + _AO * (r * math.cos(phi)) + _AB * (r * math.sin(phi))
+    d = _AO * math.cos(phi) + _AB * math.sin(phi)
+    if s >= 0.0:
+        return _A0 + _AD * s + d * r
+    psi = -s / r
+    return _A0 + (d * math.cos(psi) - _AD * math.sin(psi)) * r
 
 
 def _gd_s_range(phi):
     tau = GD_T + GD_TRIM[1]
-    s_top = 0.0
-    for _ in range(10):                                  # top edge tucks under the plates
-        q = _gd_point(s_top, phi, tau)
-        cap = _lerp(GD_TOP_Z[0], GD_TOP_Z[1], _smooth(RAD(15), RAD(60), abs(phi)))
+    cap0 = _lerp(GD_TOP_Z[0], GD_TOP_Z[1], _smooth(RAD(15), RAD(60), abs(phi)))
+
+    def above(s):                                        # > 0 while the edge is too high
+        q = _gd_point(s, phi, tau)
+        cap = cap0
         zu = _p2_under_z(q.x, q.y)
         if zu is not None:
             cap = min(cap, zu - GD_GAP)
-        s_top += (q.z - cap) / -_AD.z
+        return q.z - cap
+    lo, hi = -0.05, 0.12                                 # top edge tucks under the plates
+    for _ in range(40):
+        m = 0.5 * (lo + hi)
+        if above(m) > 0:
+            lo = m
+        else:
+            hi = m
+    s_top = hi
     s_bot = 0.15
     for _ in range(6):                                   # bottom edge horizontal at pauldron_bottom_z
         q = _gd_point(s_bot, phi)
@@ -714,9 +731,10 @@ def _buckle():
 
 
 # ============================================================================ pouches
-def _pouch(name, th, w, h, d, cross_clasp=True):
+def _pouch(name, th, w, h, d, cross_clasp=True, drop=0.0):
     half = (w * 0.5 + 0.006) / max(_skirt_r(th, BELT_Z0 - h * 0.5), 0.1)
-    fr = _hang_frame(th, BELT_Z0 + 0.003, BELT_Z0 + 0.003 - h, POUCH_CLR, half)
+    z_top = BELT_Z0 + 0.003 - drop
+    fr = _hang_frame(th, z_top, z_top - h, POUCH_CLR, half)
     parts = []
     n = 16
 
@@ -759,7 +777,7 @@ def _pouch(name, th, w, h, d, cross_clasp=True):
         parts.append(fr.place(bar, (0.0, yf + 0.0035, zt + 0.004)))
     parts.append(_rivet("pouch_stud", fr(0.0, yf + 0.0045, zt - 0.008), fr.y, r=0.0050, h=0.0035, n=6))
     # hanger strap over the belt
-    parts.append(_keeper("pouch_hanger", th, w=0.026, hang=0.020))
+    parts.append(_keeper("pouch_hanger", th, w=0.026, hang=0.020 + drop))
     return lib.join(parts, name, topo="rigid")
 
 
@@ -889,8 +907,8 @@ def build():
     xb, wb, hb, db = POUCH_BACK
     zb = BELT_Z0 - hb * 0.5
     thb = _skirt_th(xb, zb, POUCH_CLR + db * 0.5, back=True, half=0.3)
-    objs.append(_pouch("pouch_back_L", thb, wb, hb, db))
-    objs.append(_pouch("pouch_back_R", -thb, wb, hb, db))
+    objs.append(_pouch("pouch_back_L", thb, wb, hb, db, drop=POUCH_BACK_DROP))
+    objs.append(_pouch("pouch_back_R", -thb, wb, hb, db, drop=POUCH_BACK_DROP))
     objs.append(_canister())
     objs.append(_hoses())
     for o in objs:
