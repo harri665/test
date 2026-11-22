@@ -133,9 +133,9 @@ _MASK_COLS = [(0.0, 0.0),
               (0.0233, 0.095),     # 5 side ridge top
               (0.0305, 0.135),     # 6 side ridge top
               (0.0323, 0.145),     # 7 side ridge foot / side facet
-              (0.0460, 0.340),     # 8 facet
-              (0.0600, 0.620),     # 9 rim foot
-              (0.0680, 0.820),     # 10 rim inner edge
+              (0.0460, 0.380),     # 8 facet
+              (0.0600, 0.660),     # 9 rim foot
+              (0.0680, 0.840),     # 10 rim inner edge
               (MASK_XC, 1.0)]      # 11 outline (rear side edge)
 _ROWS_TOP = [0.0, 0.0035, 0.0055, 0.0085, 0.0135, 0.0165]   # metres down from the top edge
 _ROWS_BOT = [0.0055, 0.0035, 0.0]                             # metres up from the V edge
@@ -337,7 +337,7 @@ def _ear_mesh(surf):
         return su, 0.5 * EAR_H * s, c, s
 
     # (outline scale, height over the ear plane): back, rim edge, helix crest, helix inner, bowl
-    prof = [(1.00, 0.0), (0.97, 0.0050), (0.85, 0.0063), (0.70, 0.0043), (0.47, 0.0012)]
+    prof = [(1.00, 0.0), (0.97, 0.0052), (0.85, 0.0066), (0.70, 0.0040), (0.47, 0.0000)]
     verts, rings = [], []
     root = []
     for k in range(n):
@@ -634,6 +634,8 @@ def _relief(j, r, nr):
     """Offset of grid vertex (column class j = 0 centre .. 11 outline, row r of 0..nr)."""
     if r <= 1 or r >= nr - 1 or j >= 10:
         return H_RIM
+    if 7 <= j <= 9 and r in (3, 4):
+        return H_LIGHT                                    # recess for the brow light (side facet)
     if r == 2 or r == nr - 2 or j == 9:
         return 0.0                                        # rim foot
     if j <= 2:                                            # centre ridge, T cap, V channel
@@ -715,7 +717,7 @@ def build_lights(grid, cls, nr):
         _strip([section(grid[c3][r], grid[c4][r], H_FLOOR) for r in range(3, nr - 3)], verts, faces)
         c7, c8, c9 = col[7 * sg], col[8 * sg], col[9 * sg]
         _strip([section(grid[c][3], grid[c][4], H_LIGHT) for c in (c7, c8)]
-               + [section(lerp2(grid[c8][3], grid[c9][3], 0.55), lerp2(grid[c8][4], grid[c9][4], 0.55), H_LIGHT)],
+               + [section(lerp2(grid[c9][3], grid[c8][3], 0.12), lerp2(grid[c9][4], grid[c8][4], 0.12), H_LIGHT)],
                verts, faces)
     c0, cl, cr = col[0], col[-1], col[1]
     hs = 0.5 * (H_SLOT + H_RIDGE)
