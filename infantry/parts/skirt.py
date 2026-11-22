@@ -58,20 +58,21 @@ TROUSER_ENV = [(1.20, 0.119, -0.103, 0.105), (1.15, 0.131, -0.108, 0.113), (1.10
                (1.05, 0.157, -0.119, 0.130), (1.00, 0.173, -0.117, 0.124), (0.95, 0.188, -0.115, 0.119),
                (0.90, 0.193, -0.106, 0.106), (0.85, 0.196, -0.097, 0.095), (0.80, 0.199, -0.092, 0.090),
                (0.75, 0.201, -0.087, 0.088), (0.70, 0.204, -0.083, 0.085), (0.65, 0.206, -0.080, 0.081),
-               (0.60, 0.208, -0.078, 0.077), (0.55, 0.213, -0.076, 0.075), (0.50, 0.209, -0.073, 0.078),
-               (0.45, 0.209, -0.065, 0.081), (0.40, 0.210, -0.058, 0.081), (0.35, 0.211, -0.059, 0.078),
-               (0.30, 0.215, -0.052, 0.081), (0.25, 0.204, -0.037, 0.073)]
+               (0.60, 0.208, -0.078, 0.077), (0.55, 0.214, -0.076, 0.075), (0.50, 0.209, -0.073, 0.079),
+               (0.45, 0.209, -0.065, 0.081), (0.40, 0.210, -0.058, 0.081), (0.35, 0.215, -0.055, 0.080),
+               (0.30, 0.219, -0.052, 0.087), (0.25, 0.204, -0.037, 0.073)]
 TROUSER_CLR = 0.007
 
 # ---- panel layout (FBX "JacketMain" front panels + "Jacket wave" .. ".005"), left side -------------
 LAYER = dict(back=0, side=1, side_front=2, side_back=2, back_upper=3, front_under=3, front_over=4, tab=4)
-# front opening (I3): tall narrow inverted V, apex ~1.09, straight edges.  skirt_front_L's inner edge
-# is the coat flap's edge line carried on down: straight from where the flap ends (OVER_EDGE[0]) to
-# the panel's tip at the hem; above the flap bottom (hidden under the flap) it swings on to the left
-# with UP_SLOPE.  FBX values; replace OVER_EDGE[0] with the coat flap's real bottom corner.
-OVER_EDGE = ((1.130, -0.003), (0.380, 0.133))
-UP_SLOPE = 0.57
-UNDER_EDGE = ((1.085, 0.000), (0.392, -0.126))     # skirt_front_R's inner edge (true x) below the apex
+# front opening (I3): tall narrow inverted V, straight edges.  skirt_front_L's inner edge is the coat
+# wrap flap's edge line carried on down to the hem (coat agent, I2): the flap ends at z 1.130 with its
+# free edge at world x -0.044 and the edge line slants back toward +X at 0.24 per metre down; it
+# meets the panel's tip at the hem.  Above the flap bottom (hidden under the flap tongue) the panel
+# edge follows the flap's own edge (world slope FLAP_UP_SLOPE) 2 mm inside it.
+OVER_EDGE = ((1.130, -0.044), (0.380, -0.044 + 0.24 * (1.130 - 0.380)))
+FLAP_UP_SLOPE, FLAP_EDGE_IN = 0.313, 0.002
+UNDER_EDGE = ((1.020, -0.0176), (0.392, -0.128))   # skirt_front_R's inner edge (true x) below the apex
 UNDER_X_TOP = 0.025                 # ... above it, it runs on under skirt_front_L to this true x
 FRONT_OUT = (0.149, 0.236)          # front panels' outer edge x = a + b * (1.0 - z)
 FRONT_HEM = dict(over=(OVER_EDGE[1][0], 0.515), under=(UNDER_EDGE[1][0], 0.505))   # z: tip, outer corner
@@ -85,10 +86,10 @@ SD_KICK = (0.018, 0.58, 0.40, 0.55, 1.0)
 SB_OUT, SB_IN, SB_HEM = ((1.24, 31.0), (0.56, 37.0)), ((1.24, 0.045), (0.56, 0.112)), (0.650, 0.566)
 # back panel: outer edge under the side panel; vent edge closed down to VENT_TOP, then opening
 BK_OUT, BK_HEM = ((1.24, 26.0), (0.45, 42.0)), (0.450, 0.330, 0.370, 0.82)  # outer, tip, vent z; tip u
-VENT_TOP, VENT_X0, VENT_X1 = 0.950, 0.0025, 0.030
+VENT_TOP, VENT_X0, VENT_X1 = 0.950, 0.0005, 0.030   # halves meet in a chamfer groove above the vent
 # upper back overlay: V hem down to the centre seam
 BU_OUT, BU_HEM = ((1.24, 24.0), (0.96, 19.0)), (0.960, 0.822)
-BU_SEAM_X = 0.0025
+BU_SEAM_X = 0.0005                  # centre seam = chamfer groove (FBX centre line)
 # back tab (I4): hangs from the belt, pointed bottom; raised bar continues the coat's emblem stem
 TAB_X, TAB_TOP, TAB_CORNER_Z, TAB_TIP_Z = 0.065, 1.215, 1.005, 0.950
 BAR_W, BAR_H, BAR_TOP, BAR_TIP = 0.0045, 0.0030, 1.192, 0.972
@@ -403,7 +404,7 @@ def front_over_edge_x(z):
     """True x of skirt_front_L's inner edge (the coat flap's edge line carried down to the hem)."""
     (z0, x0), (z1, x1) = OVER_EDGE
     if z > z0:
-        return x0 - UP_SLOPE * (z - z0)
+        return x0 + FLAP_EDGE_IN - FLAP_UP_SLOPE * (z - z0)
     return x0 + (x1 - x0) * (z - z0) / (z1 - z0)
 
 
@@ -412,7 +413,7 @@ def front_under_edge_x(z):
     skirt_front_L to +UNDER_X_TOP above it."""
     (z0, x0), (z1, x1) = UNDER_EDGE
     slope = (x0 - x1) / (z0 - z1)
-    return -_smax(-(x0 + slope * (z - z0)), -UNDER_X_TOP, 0.02)
+    return -_smax(-(x0 + slope * (z - z0)), -UNDER_X_TOP, 0.008)
 
 
 def _front_out_x(z):
