@@ -65,10 +65,9 @@ PLAQUE_HW, PLAQUE_HH = 0.035, 0.033   # front_head: diamond ~35 % of crown width
 PLAQUE_TH = 0.0045
 STUD_ANGLES = (-19.0, -56.0, 27.0)    # side_head: three small diamond studs per side (deg, left side)
 
-
 # ------------------------------------------------------------------ head / neck
 # The hood is a smooth egg: compare FRONT f=0.10 (z 1.705) gives a half width of ~0.068, compare
-# SIDE the same row ~0.083 in front of / ~0.072 behind HEAD_CENTER.y -> side depth only ~1.12 x the
+# SIDE the same row ~0.083 in front of / ~0.076 behind HEAD_CENTER.y -> side depth only ~1.18 x the
 # front width (HEAD_RADII.y is the old, too deep value; the hood uses its own sections below).
 HOOD = 0.003                       # balaclava cloth over the bare neck
 Z_SKULL_TOP = HC.z + HR.z          # 1.83, inside the crown
@@ -98,8 +97,10 @@ MASK_NR = 8                        # rows (top edge -> V edge)
 MASK_NH = 6                        # columns per half (2 between centre and slat, 4 slat -> side edge)
 RIM = (0.0018, 0.0010, 0.0035, -0.0006)   # rim: crest (out, up), outer roll (out, down)
 SLAT_X = (0.0300, 0.0265)          # front_head: side slats at the top / bottom (slightly converging)
-SLAT_HW, SLAT_H, SLAT_CH = 0.0040, 0.0055, 0.0016   # 8 mm wide, 5.5 mm proud, 1.6 mm chamfers
+SLAT_HW, SLAT_H, SLAT_CH = 0.0043, 0.0058, 0.0017   # ~8.5 mm wide, ~6 mm proud, chamfered top edges
 SLAT_SINK = 0.0008
+
+
 # ------------------------------------------------------------------ small helpers
 def _cr(keys, x):
     """Non-uniform Catmull-Rom through keys [(x, v0, v1, ...)] -> tuple of values."""
@@ -176,11 +177,11 @@ def _add_ring(verts, pts):
 _HEAD_KEYS = [
     (1.590, 0.0530, 0.0560, 0.0560),
     (1.620, 0.0560, 0.0630, 0.0590),
-    (1.655, 0.0605, 0.0730, 0.0640),   # lowest face loop: jaw tapers toward the slim neck
-    (1.680, 0.0655, 0.0790, 0.0705),
-    (1.705, 0.0690, 0.0825, 0.0765),   # compare row f=0.10
-    (1.730, 0.0705, 0.0835, 0.0825),   # side_head: the skull bulges out behind just under the brim
-    (1.760, 0.0715, 0.0830, 0.0845),   # brow, at the hat's sweatband
+    (1.655, 0.0600, 0.0730, 0.0640),   # lowest face loop: jaw tapers toward the slim neck
+    (1.680, 0.0645, 0.0790, 0.0705),
+    (1.705, 0.0675, 0.0825, 0.0765),   # compare row f=0.10
+    (1.730, 0.0695, 0.0835, 0.0825),   # side_head: the skull bulges out behind just under the brim
+    (1.760, 0.0705, 0.0830, 0.0845),   # brow, at the hat's sweatband
     (1.790, 0.0700, 0.0790, 0.0815),   # cap ring (inside the crown)
     (1.815, 0.0640, 0.0720, 0.0740),
 ]
