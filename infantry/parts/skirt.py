@@ -149,10 +149,11 @@ def _env(z):
 
 def _trouser_req(z):
     """Smallest under-skirt (rx, ryf, ryb) that clears the trousers by U_CLEAR at height z.
-    Measured on the legs mesh: with the depth kept >= the envelope depth + 1 cm, the width the
-    under skirt needs is the envelope width + ~1.5 %."""
+    Measured on the legs mesh: with the depth kept >= the envelope depth + 1.2 cm (pelvis) / + 4 cm
+    (thighs), the width the under skirt needs is the envelope width + ~1.5 %."""
     mx, yf, yb = _env(z)
-    return mx * 1.015 + U_CLEAR, -yf + U_CLEAR + 0.010, yb + U_CLEAR + 0.010
+    dy = 0.012 + 0.030 * _sstep(1.00, 0.92, z)        # thighs: extra depth keeps the width need small
+    return mx * 1.015 + U_CLEAR, -yf + dy, yb + dy
 
 
 _RAW, _REQ = {}, {}
