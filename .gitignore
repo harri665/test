@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 renders/preview_*
 *.blend1
+.claude/worktrees/
