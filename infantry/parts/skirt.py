@@ -58,7 +58,7 @@ T_OVER, T_RISE, T_UNDER = 0.003, 0.003, 0.006
 T_PROFILE = [(-T_OVER, -T_UNDER), (-T_OVER, T_RISE), (0.030, T_RISE), (0.034, 0.0009),
              (0.039, 0.0020), (0.044, 0.0008), (0.044, -0.0020), (0.014, -T_UNDER)]
 # emblems: (x, z, half width, tilt deg) -- front ones lean toward the panel tip like the reference
-EMB_FRONT = (0.168, 0.590, 0.045, -28.0)
+EMB_FRONT = (0.168, 0.590, 0.045, -8.0)
 EMB_BACK = (0.092, 0.500, 0.042, 0.0)
 EMB_VENT = (0.0, VENT_TOP - 0.075, 0.028, 0.0)
 # under skirt (box pleats)
@@ -229,41 +229,57 @@ def _sheet(name, panel):
 
 def _trim(name, panel, path):
     """Wide border + piping wrapped round the panel edge along `path` (grid indices (k, j)).
-    Inward offsets are solved in the panel's (angle, z) chart so the band hugs the cloth; corners
-    are mitred."""
+    Inward offsets are solved in the panel's (angle, z) chart so the band hugs the cloth.  Obtuse
+    corners are mitred in one ring; at acute tips the binding is split into two strips whose
+    inner edges are clipped to the corner bisector, so the mitre never folds back on itself."""
     Q = [panel.Q[k][j] for k, j in path]
     F = [panel.frame(a, z) for a, z in Q]
-    # which side is inside: compare with an interior neighbour of a middle vertex
-    km, jm = path[len(path) // 2]
+    m = len(path) // 2
+    km, jm = path[m]
     nb = (min(max(km, 1), panel.nr - 1), min(max(jm, 1), len(panel.us) - 2))
-    inside = panel.P(*panel.Q[nb[0]][nb[1]]) - F[len(path) // 2][0]
-    rings = []
-    sign = None
-    for i, (p, pa, pz, n) in enumerate(F):
-        ws = []
-        for j0, j1 in ((i - 1, i), (i, i + 1)):
-            if 0 <= j0 and j1 < len(F):
-                t = (F[j1][0] - F[j0][0]).normalized()
-                ws.append(n.cross(t).normalized())
-        if sign is None:
-            mid = F[len(path) // 2]
-            t = (F[min(len(path) // 2 + 1, len(F) - 1)][0] - F[max(len(path) // 2 - 1, 0)][0]).normalized()
-            sign = 1.0 if mid[3].cross(t).dot(inside) > 0 else -1.0
-        w = (ws[0] + ws[-1]).normalized() * sign
-        cosh = max(abs(w.dot(ws[0])), 0.4)
-        w = w / cosh
-        # 3D direction -> (da, dz) per metre (least squares on the tangent plane)
-        g11, g12, g22 = pa.dot(pa), pa.dot(pz), pz.dot(pz)
-        b1, b2 = pa.dot(w), pz.dot(w)
-        det = g11 * g22 - g12 * g12
-        da, dz = (g22 * b1 - g12 * b2) / det, (g11 * b2 - g12 * b1) / det
-        a0, z0 = Q[i]
-        ring = []
-        for s, h in T_PROFILE:
-            q, _, _, nq = panel.frame(a0 + da * s, z0 + dz * s)
-            ring.append(q + nq * h)
-        rings.append(ring)
-    return lib.lofted(name, rings, closed=True, cap_start=True, cap_end=True, topo="main")
+    inside = panel.P(*panel.Q[nb[0]][nb[1]]) - F[m][0]
+    t = (F[min(m + 1, len(F) - 1)][0] - F[max(m - 1, 0)][0]).normalized()
+    sign = 1.0 if F[m][3].cross(t).dot(inside) > 0 else -1.0
+    # split at acute corners
+    cuts, half = [0], {}
+    for i in range(1, len(F) - 1):
+        d0, d1 = F[i - 1][0] - F[i][0], F[i + 1][0] - F[i][0]
+        if d0.angle(d1) < math.radians(75.0):
+            cuts.append(i)
+            half[i] = math.tan(d0.angle(d1) / 2)
+    cuts.append(len(F) - 1)
+    run = [0.0]
+    for i in range(1, len(F)):
+        run.append(run[-1] + (F[i][0] - F[i - 1][0]).length)
+    parts = []
+    for piece, (i0, i1) in enumerate(zip(cuts, cuts[1:])):
+        rings = []
+        for i in range(i0, i1 + 1):
+            lim = min((run[i] - run[i0]) * half[i0] if i0 in half else 9.0,
+                      (run[i1] - run[i]) * half[i1] if i1 in half else 9.0)
+            p, pa, pz, n = F[i]
+            ws = []
+            for j0, j1 in ((i - 1, i), (i, i + 1)):
+                if i0 <= j0 and j1 <= i1:
+                    ws.append(n.cross((F[j1][0] - F[j0][0]).normalized()).normalized())
+            w = (ws[0] + ws[-1]).normalized() * sign
+            w = w / max(abs(w.dot(ws[0] * sign)), 0.45)
+            g11, g12, g22 = pa.dot(pa), pa.dot(pz), pz.dot(pz)
+            b1, b2 = pa.dot(w), pz.dot(w)
+            det = g11 * g22 - g12 * g12
+            da, dz = (g22 * b1 - g12 * b2) / det, (g11 * b2 - g12 * b1) / det
+            a0, z0 = Q[i]
+            ring = []
+            for s, h in T_PROFILE:
+                s = min(s, lim)
+                q, _, _, nq = panel.frame(a0 + da * s, z0 + dz * s)
+                ring.append(q + nq * h)
+            rings.append(ring)
+        parts.append(lib.lofted(f"{name}_{piece}", rings, closed=True, cap_start=True, cap_end=True, topo="main"))
+    if len(parts) == 1:
+        parts[0].name = parts[0].data.name = name
+        return parts[0]
+    return lib.join(parts, name, topo="main")
 
 
 def _cols(n_before, u_tip, n_after):

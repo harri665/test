@@ -45,14 +45,16 @@ PL_T2, PL_T1 = 0.0045, 0.0070            # under-plate / top plate thickness
 PL_TRIM = (0.012, 0.0025)                # top plate raised border frame: width, height
 
 # curved upper-arm guard (P3)
-GD_CLR = 0.010           # inner surface outside the sleeve contract (arm radius + 0.022)
-GD_SLEEVE = 0.022        # DETAIL_PASS: upper sleeve radius <= arm radius + 0.022
+GD_CLR = 0.010           # inner surface stays this far outside the sleeve
+# sleeve envelope over the bare arm vs. the angle around the arm (0 = straight out, +-90 = back /
+# front).  The final arms.py sleeve is pressed flat on its outer side (+0.000..0.004 within
+# +-30 deg) and fuller front / back (<= +0.020); measured on its mesh, this stays >= all samples.
+GD_ENV = (0.005, 0.0175, RAD(85), 1.6)          # base, extra, angle where it saturates, exponent
 GD_T = 0.0050
 GD_TRIM = (0.012, 0.0022)
 GD_PHI = (RAD(-96), RAD(104))   # front edge .. back edge, 0 = straight out from the arm (ref side:
                                 # the guard sits a little behind the arm centre)
-GD_POW = 2.0
-GD_TOP_Z = (1.5115, 1.500)  # top edge of the guard: at its outer face / at its front and back legs
+GD_TOP_Z = (1.535, 1.505)  # top edge of the guard: at its outer face / at its front and back legs
                            # (tucks under the plates; ref 1.50-1.535)
 GD_GAP = 0.004           # air between guard top and the under-plate's underside
 
@@ -430,14 +432,15 @@ def _p1_under(u, v):
 
 
 # ---- upper-arm guard
-def _gd_r(s):
-    return spec.arm_radius(max(s, 0.0) / _LU) + GD_SLEEVE + GD_CLR
+def _gd_r(s, phi=0.0):
+    b, x, a_sat, k = GD_ENV
+    env = b + x * min(1.0, (abs(phi) / a_sat) ** k)
+    return spec.arm_radius(max(s, 0.0) / _LU) + env + GD_CLR
 
 
 def _gd_point(s, phi, extra=0.0):
-    r = _gd_r(s) + extra
-    e = 2.0 / GD_POW
-    return _A0 + _AD * s + _AO * (r * _sp(math.cos(phi), e)) + _AB * (r * _sp(math.sin(phi), e))
+    r = _gd_r(s, phi) + extra
+    return _A0 + _AD * s + _AO * (r * math.cos(phi)) + _AB * (r * math.sin(phi))
 
 
 def _gd_s_range(phi):
@@ -457,8 +460,8 @@ def _gd_s_range(phi):
     return s_top, s_bot
 
 
-_gd_pmap, _GD_LV = _arc_map(lambda t: V((_sp(math.cos(_lerp(*GD_PHI, t)), 2 / GD_POW),
-                                         _sp(math.sin(_lerp(*GD_PHI, t)), 2 / GD_POW), 0.0)) * 0.085)
+_gd_pmap, _GD_LV = _arc_map(lambda t: V((math.cos(_lerp(*GD_PHI, t)), math.sin(_lerp(*GD_PHI, t)), 0.0))
+                             * _gd_r(0.08, _lerp(*GD_PHI, t)))
 
 
 def _gd_phi(v):
@@ -513,7 +516,7 @@ def _pauldron_left():
 
     def wrap(x, y, z, phi_c=phi_c, s_c=s_c):
         s = s_c - y
-        r = _gd_r(s) + GD_T - 0.0008
+        r = _gd_r(s, phi_c) + GD_T - 0.0008
         return _gd_point(s, phi_c + x / r, GD_T - 0.0008 + z)
     parts.append(_bend(em, wrap))
     # small four-point star on the front upper corner, rosette rivets at the bottom corners

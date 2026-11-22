@@ -65,10 +65,10 @@ BACK_SEAM_X = (0.135, 0.055) # double piped princess seams: x at the yoke -> x a
 EMBLEM_SIZE = 0.060          # dagger-cross: ~0.20 m tall (3.3 x size), top tip just under the yoke edge
 # side_torso.png / callout_collar.png
 COLLAR_OPEN_TOP = 68.0       # half-angle (deg from front) of the collar's front opening at the top
-COLLAR_DROP = 0.035          # top edge falls from collar_top_z at the back to the front points (side view)
-COLLAR_BASE_GROW = 0.024     # the collar stands on the shoulders: base +-0.118 wide (back view) ...
+COLLAR_DROP = 0.040          # top edge falls from collar_top_z at the back to the front points (side view)
+COLLAR_BASE_GROW = 0.030     # the collar stands on the shoulders: base +-0.123 wide (back view) ...
 COLLAR_BASE_GROW_FRONT = 0.004   # ... narrowing to the lapel tops at the front
-COLLAR_TOP_OUT = 0.006       # wall top just outside collar_top_r; the rolled rim adds ~3 mm more
+COLLAR_TOP_OUT = 0.010       # wall top outside collar_top_r: the sheet's collar is ~0.14 wide at the top
 COLLAR_POINT_FWD = 0.068     # the front points flare forward ...
 COLLAR_POINT_OUT = 0.008     # ... and out
 COLLAR_THICK = 0.012         # wall thickness
@@ -624,7 +624,7 @@ def _collar(S):
     grid = []
     for h in range(n_row + 1):
         t = h / n_row
-        f = t ** 1.6                                      # stands straight, then flares toward the top
+        f = t ** 1.25                                     # a slightly flaring cone
         grid.append([V((bb.x + (tt.x - bb.x) * f, bb.y + (tt.y - bb.y) * f, bb.z + (tt.z - bb.z) * t))
                      for bb, tt in zip(base_row, top_row)])
     w_ = n_col + 1
@@ -681,7 +681,15 @@ def _collar(S):
     band = lib.strip_along("coat_collar_band", [outer[gi(1, k)] for k in range(w_)],
                            [normals[gi(1, k)] for k in range(w_)], topo="main", width=0.012, thickness=0.003,
                            sink=0.001)
-    objs = [wall, rim, _join([st_out, st_in, band], "coat_collar_trim")]
+    # folded-back front edges: a flat facing band on the outside of both front edges (callout_collar)
+    facings = []
+    for kk in (0.42, n_col - 0.42):
+        seqf = [(h, kk) for h in np.linspace(0.3, n_row - 0.35, 8)]
+        f_pts = [lerp_pt(outer, h, k) for h, k in seqf]
+        f_nrm = [lerp_pt(normals, h, k) for h, k in seqf]
+        facings.append(lib.strip_along(f"coat_collar_facing_{kk:.0f}", f_pts, f_nrm, topo="main", width=0.014,
+                                       thickness=0.0035, sink=0.001))
+    objs = [wall, rim, _join([st_out, st_in, band] + facings, "coat_collar_trim")]
     # keep clear of the head ellipsoid (+ 1 cm face mask in front)
     hc, hr = spec.HEAD_CENTER, spec.HEAD_RADII
     worst = 9.0
@@ -695,8 +703,8 @@ def _collar(S):
 
 
 # ============================================================================ front
-LAPEL_TRIM = dict(width=0.009, thickness=0.0022, sink=0.0008)   # raised border band (front_torso)
-LAPEL_TRIM_IN, LAPEL_STITCH_IN = 0.0075, 0.018
+LAPEL_TRIM = dict(width=0.011, thickness=0.003, sink=0.0008)   # raised border band (front_torso)
+LAPEL_TRIM_IN, LAPEL_STITCH_IN = 0.008, 0.020
 
 
 def _lapel_border(name, S, corners, off):

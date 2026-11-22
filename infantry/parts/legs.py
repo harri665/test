@@ -189,22 +189,24 @@ _UNTWIST = {0: 0.55, 1: 0.85}                  # ... and part of the split ring'
 # pairs) sag toward the boot, the last one rolls over the boot top.  Radii respect trouser_blouse.
 BLOUSE_ROWS = [
     (0.474, 0.0925, 0.00), (0.441, 0.0970, 0.03), (0.413, 0.0990, 0.10),
-    (0.406, 0.0955, 0.20), (0.393, 0.0990, 0.30), (0.381, 0.0985, 0.40),                    # roll 1
-    (0.369, 0.0945, 0.55), (0.357, 0.0990, 0.65), (0.345, 0.0990, 0.75),                    # roll 2
-    (0.333, 0.0950, 0.85), (0.321, 0.1000, 0.95), (0.310, 0.0990, 1.00), (0.302, 0.0940, 1.00),   # roll 3
+    (0.406, 0.0925, 0.20), (0.393, 0.0985, 0.30), (0.381, 0.0980, 0.40),                    # roll 1
+    (0.369, 0.0915, 0.55), (0.357, 0.0990, 0.65), (0.345, 0.0985, 0.75),                    # roll 2
+    (0.333, 0.0920, 0.85), (0.321, 0.1000, 0.95), (0.310, 0.0990, 1.00), (0.302, 0.0940, 1.00),   # roll 3
     (0.2975, 0.0850, 1.00), (0.2970, 0.0760, 0.90),                                          # underside
 ]
 # then gathered tight round the shin (reads as the boot shaft in the reference) and tucked over the rim
 # into the boot: (z, offset from the boot shaft surface)
-TUCK_ROWS = [(0.2920, 0.0055), (0.2730, 0.0040), (0.2540, 0.0040), (0.2522, 0.0005), (0.2505, -0.0050),
-             (0.2440, -0.0085), (0.2320, -0.0090)]
+# (z, offset from the boot shaft surface, sag weight)
+TUCK_ROWS = [(0.2885, 0.0055, 0.9), (0.2730, 0.0040, 0.3), (0.2540, 0.0040, 0.0), (0.2522, 0.0005, 0.0),
+             (0.2505, -0.0050, 0.0), (0.2440, -0.0085, 0.0), (0.2320, -0.0090, 0.0)]
+SAG = 0.011                     # how far the fold rolls droop (most at the front)
 
 
 def _creases(th, z, side):
     """Vertical creases (radial metres), strongest where the blouse gathers above the rolls."""
     u = th / TAU
     v = _sstep((0.50 - z) / 0.12)
-    amp = 0.0045 * v * (1.0 - 0.55 * _sstep((0.40 - z) / 0.10)) + 0.0015
+    amp = 0.0055 * v * (1.0 - 0.45 * _sstep((0.40 - z) / 0.10)) + 0.0015
     return lib.fold_wave(u, (z - 0.25) / 0.30, amp=amp, count=4.0, seed=0.37 if side > 0 else 0.81, grow=0.0)
 
 
@@ -228,7 +230,7 @@ def trouser_pt(z, r, th, side=1, dip=0.0, seat=0.0, sag=0.0, folds=True):
     k = 1.0 + dr / r
     x = max(ex + rx * math.cos(th) * k, GAP - 0.004)
     y = cy + (r + seat * (SPLIT_RY - _thigh_r(Z_SPLIT))) * math.sin(th) * k
-    zz = z - dip * ((1 - math.cos(th)) * 0.5) ** 1.5 - sag * 0.008 * _sag(th, side)
+    zz = z - dip * ((1 - math.cos(th)) * 0.5) ** 1.5 - sag * SAG * _sag(th, side)
     return V((x, y, zz))
 
 
@@ -325,11 +327,12 @@ def build_knee_and_blouse(side, top_ring):
     rings = [knee[-1]]
     for z, r, sag in BLOUSE_ROWS:
         rings.append(_leg_ring(z, side, r=r, sag=sag))
-    for z, d in TUCK_ROWS:
+    for z, d, sw in TUCK_ROWS:
         ring = []
         for j in range(NL):
             th = TAU * j / NL
             p = boot_rel_pt(z, d, th)
+            p.z -= sw * SAG * _sag(th, side)
             ring.append(V((p.x * side, p.y, p.z)))
         rings.append(ring)
     blouse = lib.lofted("trouser_blouse_" + sfx, rings, topo="main", sharp_angle=75)
@@ -476,7 +479,7 @@ def build_upper():
 
 
 # ================================================================== SOLE (local frame)
-LUG_Z = 0.019             # top of the tread lugs
+LUG_Z = 0.025             # top of the tread lugs
 NOTCH = 0.017             # arch notch height between heel block and forefoot
 LUG_IN = 0.0045           # groove depth between lugs
 
@@ -526,9 +529,9 @@ def build_sole():
     for y, w, zb, inset in _sole_sections():
         wl = w - 0.002 - inset
         r = [(-(wl - ch), zb), (0.0, zb), (wl - ch, zb)]
-        r += [(wl, zb + ch), (wl, LUG_Z), (w - 0.004, LUG_Z + 0.004), (w, LUG_Z + 0.008), (w, SOLE_T - ch2)]
+        r += [(wl, zb + ch), (wl, LUG_Z), (w - 0.004, LUG_Z + 0.0035), (w, LUG_Z + 0.007), (w, SOLE_T - ch2)]
         r += [(w - ch2, SOLE_T), (0.0, SOLE_T), (-(w - ch2), SOLE_T)]
-        r += [(-w, SOLE_T - ch2), (-w, LUG_Z + 0.008), (-(w - 0.004), LUG_Z + 0.004), (-wl, LUG_Z), (-wl, zb + ch)]
+        r += [(-w, SOLE_T - ch2), (-w, LUG_Z + 0.007), (-(w - 0.004), LUG_Z + 0.0035), (-wl, LUG_Z), (-wl, zb + ch)]
         rings.append(mb.add([V((x, y, z)) for x, z in r]))
     for a, b in zip(rings, rings[1:]):
         mb.strip(a, b, closed=True)
