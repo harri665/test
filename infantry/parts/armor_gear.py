@@ -29,39 +29,36 @@ DEG = math.degrees
 # (docs/ref/front_torso, callout_shoulder, side_torso, back_torso, front_waist, back_waist; the
 #  measurements were taken with a metric grid laid over the sheet at the compare.py scale)
 
-# shoulder plate (P1) lying on the shoulder slope, with a slightly larger under-plate (P2) below it
+# epaulette strap: a flat strap lying on the shoulder slope from the collar out over the guard,
+# two buttons toward its outer end (ref front / back / callout_shoulder)
 PL_X0 = 0.140            # inner end, against the collar (ref front: 0.145 at the top edge)
-PL_X1 = 0.252            # outer end of the top plate's crown (ref front: 0.258 at z 1.56, incl. the
-                         # under-plate step)
-PL_STEP = 0.010          # the under-plate peeks out this far beyond the top plate (ref: double edge)
-PL_LEAN = 0.55           # ends slant inward going down (ref front: outer end 0.258@1.56 -> 0.205@1.495)
-PL_W = (0.128, 0.126)    # under-plate half width front-back at the inner / outer end (ref side arch;
-                         # wide at the collar end so the front leg passes in front of the chest)
-PL_D = (0.032, 0.095)    # front / back legs drop this far below the crown at inner / outer end
-PL_YC = 0.008            # arch centre a little behind the shoulder line (ref side)
-PL_POW = 2.6             # arch section superellipse power
-PL_CLR = 0.008           # under-plate underside above the coat shoulder / armhole top
+PL_X1 = 0.268            # outer end, overhanging the guard's top (ref front: 0.258)
+PL_HW = 0.046            # half width front-back (ref: a ~9 cm strap)
+PL_EDGE = 0.008          # its long edges curve down this much (follows the shoulder, no flaps)
+PL_YC = 0.004            # centred a hair behind the shoulder line
+PL_CLR = 0.008           # underside above the armhole seam's top point
 PL_SLOPE = 0.06          # linear fall of the crown from the collar end (follows the coat yoke)
-PL_Z_IN = 1.5918         # under-plate crown height at its inner end (coat yoke ~1.591 there + 0.0045;
-                         # the ref plate tops out at 1.605, so the stack has to stay thin)
-PL_T2, PL_T1 = 0.0045, 0.0070            # under-plate / top plate thickness
-PL_TRIM = (0.012, 0.0025)                # top plate raised border frame: width, height
+PL_Z_IN = 1.5918         # underside height at the collar end (coat yoke ~1.591 there + 0.0045)
+PL_T = 0.010
+PL_TRIM = (0.010, 0.0028)                # raised border frame: width, height
+PL_BUTTONS = (0.56, 0.80)                # along the strap (0 collar .. 1 outer end)
 
-# curved upper-arm guard (P3)
+# upper-arm guard: a curved shell over the deltoid, wrapping well round front and back, its arched
+# top (rolled rim) tucked under the strap (ref side_torso / callout_shoulder)
 GD_CLR = 0.010           # inner surface stays this far outside the sleeve
 # sleeve envelope over the bare arm vs. the angle around the arm (0 = straight out, +-90 = back /
 # front).  The final arms.py sleeve is pressed flat on its outer side (+0.000..0.004 within
-# +-30 deg) and fuller front / back (<= +0.020); measured on its mesh, this stays >= all samples.
-GD_ENV = (0.005, 0.0175, RAD(85), 1.6)          # base, extra, angle where it saturates, exponent
+# +-30 deg) and <= +0.020 front / back; this stays >= all samples.  Front / back it opens out
+# further (+0.035) so the shell is ~20 % deeper front-to-back than the arm (ref side).
+GD_ENV = (0.005, 0.030, RAD(90), 1.6)           # base, extra, angle where it saturates, exponent
 GD_T = 0.0050
-GD_TRIM = (0.012, 0.0022)
-GD_PHI = (RAD(-96), RAD(104))   # front edge .. back edge, 0 = straight out from the arm (ref side:
-                                # the guard sits a little behind the arm centre)
-GD_TOP_Z = (1.506, 1.503)
-# top edge cap: on the outer face / on the front and back legs.  The ref guard runs right up under
-# the plate's arch, but our sleeve alone already fills the ref outline at z 1.516 (x 0.271), so any
-# guard over it there would widen the FRONT / BACK silhouette by 6-12 %: it stops just below.
-GD_GAP = 0.004           # air between guard top and the under-plate's underside
+GD_TRIM = (0.011, 0.0022)
+GD_PHI = (RAD(-108), RAD(122))  # front edge .. back edge, 0 = straight out from the arm (ref side:
+                                # the shell sits a little behind the arm centre)
+GD_TOP = (1.590, 1.455)  # arched top edge: height straight out (where the strap clamps it lower) /
+                         # at the front and back ends (ref side: the arch comes down to ~1.45)
+GD_TOP_ZERO = RAD(112)   # angle where the arch reaches its low end
+GD_GAP = 0.003           # air between guard top and the strap's underside
 
 # belt
 BELT_Z0, BELT_Z1 = C["belt_z"]
@@ -413,9 +410,8 @@ _AB = (_AB - _AD * _AB.dot(_AD)).normalized()               # towards the back
 _AO = _AD.cross(_AB).normalized()                           # outward (+X, a little up)
 
 _ARM_TOP = spec.armhole_ring(16)[0]                         # top of the armhole seam
-# under-plate crown: PL_Z_IN at the collar end, passing PL_CLR above the armhole seam's top point
+# strap crown: PL_Z_IN at the collar end, passing PL_CLR above the armhole seam's top point
 _PL_KC = (PL_Z_IN - PL_SLOPE * (_ARM_TOP.x - PL_X0) - (_ARM_TOP.z + PL_CLR)) / (_ARM_TOP.x - PL_X0) ** 2
-_P2_X1 = PL_X1 + PL_STEP
 
 
 def _pl_zc(x):
@@ -423,54 +419,19 @@ def _pl_zc(x):
     return PL_Z_IN - PL_SLOPE * dx - _PL_KC * dx * dx
 
 
-def _pl_w(u):
-    return _lerp(PL_W[0], PL_W[1], u)
+def _strap_under(u, v):
+    """Underside of the epaulette strap.  u: collar -> outer end, v: front edge -> back edge."""
+    x = _lerp(PL_X0, PL_X1, u)
+    t = 2 * v - 1
+    return V((x, PL_YC + PL_HW * t, _pl_zc(x) - PL_EDGE * t * t))
 
 
-def _pl_d(u):
-    return _lerp(PL_D[0], PL_D[1], u ** 1.3)
-
-
-_pl_amap, _PL_LV = _arc_map(lambda t: V((0.0, _pl_w(0.5) * _sp(math.sin((t - 0.5) * math.pi), 2 / PL_POW),
-                                         -_pl_d(0.5) * (1 - abs(math.cos((t - 0.5) * math.pi)) ** (2 / PL_POW)))))
-
-
-def _p2_under(u, v):
-    """Underside of the under-plate.  u: collar -> outer end, v: front leg -> over the top -> back leg."""
-    a = (_pl_amap(v) - 0.5) * math.pi
-    e = 2.0 / PL_POW
-    drop = _pl_d(u) * (1 - abs(math.cos(a)) ** e)
-    xc = _lerp(PL_X0, _P2_X1, u)
-    return V((xc - PL_LEAN * drop, PL_YC + _pl_w(u) * _sp(math.sin(a), e), _pl_zc(xc) - drop))
-
-
-def _p2_under_z(x, y):
-    """Approximate height of the under-plate underside above (x, y); None outside its footprint."""
-    if x > _P2_X1 + 0.004:
+def _strap_under_z(x, y):
+    """Height of the strap's underside above (x, y); None outside its footprint."""
+    t = (y - PL_YC) / PL_HW
+    if x > PL_X1 + 0.002 or x < PL_X0 or abs(t) > 1.0:
         return None
-    u = _clamp((x - PL_X0) / (_P2_X1 - PL_X0))
-    t = abs(y - PL_YC) / (_pl_w(u) - 0.002)
-    if t >= 1.0:
-        return None
-    return _pl_zc(x) - _pl_d(u) * (1 - (1 - t ** PL_POW) ** (1 / PL_POW))
-
-
-def _normal_of(P, u, v, flip=False):
-    e = 2e-3
-    du = P(min(u + e, 1.0), v) - P(max(u - e, 0.0), v)
-    dv = P(u, min(v + e, 1.0)) - P(u, max(v - e, 0.0))
-    n = du.cross(dv).normalized()
-    return -n if flip else n
-
-
-_P1_U1 = (PL_X1 - PL_X0) / (_P2_X1 - PL_X0)
-_P1_V0 = 0.05
-
-
-def _p1_under(u, v):
-    """Underside of the top plate = top surface of the under-plate, over a smaller footprint."""
-    uu, vv = u * _P1_U1, _lerp(_P1_V0, 1 - _P1_V0, v)
-    return _p2_under(uu, vv) + _normal_of(_p2_under, uu, vv) * (PL_T2 + 0.001)
+    return _pl_zc(x) - PL_EDGE * t * t
 
 
 # ---- upper-arm guard
@@ -493,12 +454,13 @@ def _gd_point(s, phi, extra=0.0):
 
 def _gd_s_range(phi):
     tau = GD_T + GD_TRIM[1]
-    cap0 = _lerp(GD_TOP_Z[0], GD_TOP_Z[1], _smooth(RAD(30), RAD(75), abs(phi)))
+    k = max(0.0, math.cos(min(abs(phi), GD_TOP_ZERO) / GD_TOP_ZERO * math.pi / 2))
+    cap0 = GD_TOP[1] + (GD_TOP[0] - GD_TOP[1]) * k ** 1.3
 
     def above(s):                                        # > 0 while the edge is too high
         q = _gd_point(s, phi, tau)
         cap = cap0
-        zu = _p2_under_z(q.x, q.y)
+        zu = _strap_under_z(q.x, q.y)
         if zu is not None:
             cap = min(cap, zu - GD_GAP)
         return q.z - cap
@@ -531,45 +493,41 @@ def _guard_P(u, v):
     return _gd_point(_lerp(s0, s1, u), phi)
 
 
-def _pauldron_left():
-    parts = []
-    # --- under-plate: only its rim shows; underside kept as a 1-ring return along the edge
-    vs, fs, _ = _plate(_p2_under, [0.5], [0.22, 0.38, 0.5, 0.62, 0.78],
-                       _P2_X1 - PL_X0, _PL_LV, PL_T2, ch=0.0015, keep_under=1)
-    parts.append(lib.mesh_object("pauldron_underplate", vs, fs, topo="rigid"))
-    # --- top plate with raised border frame and two rows of three big dome rivets
-    vs, fs, surf = _plate(_p1_under, [0.3, 0.5, 0.7], [0.2, 0.31, 0.42, 0.5, 0.58, 0.69, 0.8],
-                          PL_X1 - PL_X0, _PL_LV * (1 - 2 * _P1_V0), PL_T1, PL_TRIM[0], PL_TRIM[1],
-                          keep_under=1)
-    parts.append(lib.mesh_object("pauldron_plate", vs, fs, topo="rigid"))
-    for v in (0.135, 0.865):
-        for u in (0.22, 0.47, 0.72):
-            p, n = surf(u, v)
-            parts.append(_rivet("rivet", p, n, r=0.0095, h=0.0068))
-    p, n = surf(0.93, 0.5)                      # small stud on the outer end (ref side view)
-    parts.append(_rivet("rivet", p, n, r=0.0065, h=0.004, n=6))
-    # --- upper-arm guard
-    lu = 0.15
-    vs, fs, gsurf = _plate(_guard_P, [0.22, 0.36, 0.5, 0.64, 0.78],
-                           [0.17, 0.27, 0.38, 0.5, 0.62, 0.73, 0.83],
-                           lu, _GD_LV * 1.1, GD_T, GD_TRIM[0], GD_TRIM[1], keep_under=1)
-    parts.append(lib.mesh_object("pauldron_guard", vs, fs, topo="rigid"))
-    # rolled rim along the bottom edge
+def _guard_rim(gsurf, u, name):
     pts, nrm = [], []
-    for k in range(15):
-        v = 0.015 + 0.97 * k / 14
-        p, n = gsurf(0.955, v)
+    for k in range(17):
+        p, n = gsurf(u, 0.012 + 0.976 * k / 16)
         pts.append(p)
         nrm.append(n)
-    parts.append(lib.strip_along("guard_rim", pts, nrm, width=0.014, thickness=0.0045, sink=0.0015,
-                                 profile="round", topo="rigid"))
-    # ornate dagger-cross on the outer face, bent onto the curved guard
+    return lib.strip_along(name, pts, nrm, width=0.013, thickness=0.0045, sink=0.0015,
+                           profile="round", topo="rigid")
+
+
+def _pauldron_left():
+    parts = []
+    # --- epaulette strap with raised border and two buttons
+    vs, fs, surf = _plate(_strap_under, [0.3, 0.5, 0.7], [0.32, 0.5, 0.68],
+                          PL_X1 - PL_X0, 2 * PL_HW, PL_T, PL_TRIM[0], PL_TRIM[1], keep_under=1)
+    parts.append(lib.mesh_object("pauldron_strap", vs, fs, topo="rigid"))
+    for u in PL_BUTTONS:
+        p, n = surf(u, 0.5)
+        parts.append(_rivet("button", p, n, r=0.0115, h=0.0060))
+    # --- upper-arm guard: shell over the deltoid, rolled rims top and bottom
+    lu = 0.21
+    vs, fs, gsurf = _plate(_guard_P, [0.15, 0.27, 0.39, 0.5, 0.61, 0.73, 0.85],
+                           [0.13, 0.23, 0.33, 0.43, 0.53, 0.63, 0.73, 0.83],
+                           lu, _GD_LV * 1.1, GD_T, GD_TRIM[0], GD_TRIM[1], keep_under=1)
+    parts.append(lib.mesh_object("pauldron_guard", vs, fs, topo="rigid"))
+    parts.append(_guard_rim(gsurf, 0.962, "guard_rim_bottom"))
+    parts.append(_guard_rim(gsurf, 0.030, "guard_rim_top"))
+    # large gothic cross on the outer face, ~2/3 of the guard's height, bent onto the shell
     vc = 0.5 - (0.5 * (GD_PHI[0] + GD_PHI[1])) / (GD_PHI[1] - GD_PHI[0])   # v where phi = 0 ...
-    vc = _clamp(vc + 0.06)                                                 # ... nudged a bit back
+    vc = _clamp(vc + 0.05)                                                 # ... nudged a bit back
     phi_c = _gd_phi(vc)
     s0, s1 = _gd_s_range(phi_c)
-    s_c = _lerp(s0, s1, 0.43)
-    em = lib.emblem_ornate("guard_emblem", size=0.035, thickness=0.0035, normal=(0, 0, 1), up=(0, 1, 0))
+    s_c = _lerp(s0, s1, 0.50)
+    em = lib.emblem_gothic("guard_emblem", height=0.66 * (s1 - s0), thickness=0.0035,
+                           normal=(0, 0, 1), up=(0, 1, 0))
 
     def wrap(x, y, z, phi_c=phi_c, s_c=s_c):
         s = s_c - y
@@ -577,11 +535,11 @@ def _pauldron_left():
         return _gd_point(s, phi_c + x / r, GD_T - 0.0008 + z)
     parts.append(_bend(em, wrap))
     # small four-point star on the front upper corner, rosette rivets at the bottom corners
-    p, n = gsurf(0.20, 0.13)
+    p, n = gsurf(0.30, 0.14)
     parts.append(lib.emblem_cross("guard_star", size=0.010, thickness=0.0025, loc=p - n * 0.0005, normal=n,
                                   up=-_AD, long_tail=1.0))
-    for v in (0.12, 0.88):
-        p, n = gsurf(0.80, v)
+    for v in (0.13, 0.87):
+        p, n = gsurf(0.84, v)
         parts.append(_rivet("guard_rivet", p, n, r=0.0055, h=0.0035, n=6))
     return lib.join(parts, "pauldron_L", topo="rigid")
 

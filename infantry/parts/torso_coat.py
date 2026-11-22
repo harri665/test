@@ -48,31 +48,32 @@ NECK_Z = spec.TORSO[6][0]                # neck base
 # (world metres, measured with a world-coordinate grid laid over the sheet's FRONT / BACK / SIDE views)
 # front_torso.png
 LAPEL_TOP_X = 0.050          # collar front edge meets the lapel's top edge here (both sides)
-LAPEL_PEAK = (0.155, 1.500)  # outer point of the lapels, right under the shoulder armour
-LAPEL_BEND = (0.077, 1.462)  # the lapel's lower edge turns steeper here
+LAPEL_PEAK = (0.163, 1.497)  # outer point of the lapels, right under the shoulder armour
+LAPEL_BEND = (0.080, 1.455)  # the lapel's lower edge turns steeper here
 LAPEL_V = (0.000, 1.495)     # the two lapels' roll edges cross here (bottom of the neck V)
-LAPEL_TIP = (-0.070, 1.345)  # bottom tip of the overlapping (wearer's left) lapel
+LAPEL_TIP = (-0.072, 1.338)  # bottom tip of the overlapping lapel; its lower edge crosses x=0 at button height
 FLAP_EDGE_X = LAPEL_TIP[0]   # the free front edge then runs straight down to the belt
 FRONT_SEAM_X = 0.125         # princess seam lines on both fronts (the flap ends in the +X one)
-BUTTONS = [(-0.062, 1.395), (0.075, 1.395), (-0.035, 1.333), (0.070, 1.333), (-0.035, 1.272), (0.070, 1.272)]
+BUTTONS = [(-0.062, 1.395), (0.075, 1.395), (-0.035, 1.320), (0.068, 1.320)]   # 2 rows of 2 above the belt
 BUTTON_R = 0.015             # large domed buttons (DETAIL_PASS checklist)
 PEAK_BUTTON_IN = 0.052       # the lapel-peak buttons sit this far in from the peak
 # back_torso.png
 YOKE_Z = 1.515               # yoke lower edge at the centre back ...
 YOKE_DROP = (0.022, 0.150)   # ... and how far it falls by x = +-0.150 (nearly flat, drops at the shoulders)
 YOKE_APEX = 0.004            # small point at the centre
-BACK_SEAM_X = (0.135, 0.055) # double piped princess seams: x at the yoke -> x at the waist
-EMBLEM_SIZE = 0.064          # dagger-cross: ~0.20 m tall (3.3 x size), top tip just under the yoke edge
+BACK_SEAM_X = (0.140, 0.045) # double piped princess seams: x at the yoke -> x at the belt top (strong V)
+EMBLEM_STEM = 0.62           # gothic cross: share of its height below the bar; top under the yoke point,
+                             # stem tip at the belt top (~0.26 m tall)
 # side_torso.png / callout_collar.png
 COLLAR_OPEN_TOP = 68.0       # half-angle (deg from front) of the collar's front opening at the top
 COLLAR_DROP = 0.040          # top edge falls from collar_top_z at the back to the front points (side view)
 COLLAR_BASE_GROW = 0.030     # the collar stands on the shoulders: base +-0.123 wide (back view) ...
 COLLAR_BASE_GROW_FRONT = 0.004   # ... narrowing to the lapel tops at the front
-COLLAR_TOP_OUT = 0.010       # wall top outside collar_top_r: the sheet's collar is ~0.14 wide at the top
+COLLAR_TOP_OUT = 0.014       # straight funnel: wall top outside collar_top_r, rim outer ~0.14 wide (sheet)
 COLLAR_POINT_FWD = 0.068     # the front points flare forward ...
 COLLAR_POINT_OUT = 0.008     # ... and out
 COLLAR_THICK = 0.012         # wall thickness
-COLLAR_RIM_R = 0.0085        # rolled / folded edge along the top and both front edges
+COLLAR_RIM_R = 0.0095        # rolled / folded edge along the top and both front edges
 
 # ---------------------------------------------------------------- layering (own constants)
 FLAP_OFF = 0.008             # every overlapping panel steps out 8 mm (docs/PLAN.md)
@@ -209,6 +210,7 @@ def _neck_keys():
 
 
 YOKE_ROW = 2                 # back sheet row that carries the yoke seam
+NECK_HEM_MIN_Z = 1.535       # the head's neck / gaiter reaches down to z 1.53 inside the collar
 OBSTACLE_W = 1.5
 SEAM_R1 = 0.028              # width of the armhole loop on top of the shoulder
 SEAM_ARCH = 0.006            # padded shoulder: the shoulder seam arches up this much
@@ -314,12 +316,19 @@ def _solve_core(extra_pins=None):
     if extra_pins is None:
         return index, verts, faces
     # turned-in hem around the neck opening (added after the solve so it does not bend the shoulders)
+    # it runs in to the neck-top section (what the head's gaiter is built on) so no gap shows past it
     ring = [index[k] for k in _neck_keys()]
-    for grow, dz in ((-0.010, -0.016), (-0.020, -0.034)):
+    ncy, nrx, nry = spec.torso_section(spec.TORSO[-1][0])
+    for t, dz in ((0.45, -0.006), (1.0, -0.012)):
         lip = []
         for i in range(16):
+            phi = math.radians(270.0 + 22.5 * i)
+            a = _neckline(phi)
+            b = V((nrx * math.cos(phi), ncy + nry * math.sin(phi), a.z))
+            q = a.lerp(b, t)
+            q.z = max(a.z + dz, NECK_HEM_MIN_Z) if t < 1 else max(a.z + dz, NECK_HEM_MIN_Z + 0.004)
             lip.append(len(verts))
-            verts.append(_neckline(math.radians(270.0 + 22.5 * i), grow=grow, dz=dz))
+            verts.append(q)
         for i in range(16):
             j = (i + 1) % 16
             faces.append((ring[i], ring[j], lip[j], lip[i]))
@@ -630,7 +639,7 @@ def _collar(S):
     grid = []
     for h in range(n_row + 1):
         t = h / n_row
-        f = t ** 1.25                                     # a slightly flaring cone
+        f = t                                             # a straight funnel (no ledge at the top)
         grid.append([V((bb.x + (tt.x - bb.x) * f, bb.y + (tt.y - bb.y) * f, bb.z + (tt.z - bb.z) * t))
                      for bb, tt in zip(base_row, top_row)])
     w_ = n_col + 1
@@ -709,17 +718,28 @@ def _collar(S):
 
 
 # ============================================================================ front
-LAPEL_TRIM = dict(width=0.011, thickness=0.003, sink=0.0008)   # raised border band (front_torso)
-LAPEL_TRIM_IN, LAPEL_STITCH_IN = 0.0058, 0.018
+LAPEL_ROLL_R = 0.0085        # rolled edge round the lapels (~1.7 cm, review: lapels must read thick)
+LAPEL_STITCH_IN = 0.021
+
+
+def _roll(name, S, corners_xz, off, closed=True, r=LAPEL_ROLL_R):
+    """Rolled cloth edge: a tube lying just inside an outline, its top standing r*0.65 above the panel."""
+    cs = _inset(corners_xz, r * 0.75, closed)
+    if closed:
+        cs = cs + [cs[0]]
+    pts = []
+    for x, z in _poly_step(cs, 0.014):
+        p, n = S.point(x, z, off=_off(off, z) - r * 0.35)
+        pts.append(p)
+    return lib.lofted(name, lib.tube_rings(pts, r, n=8, x_hint=(0, -1, 0)), cap_start=True, cap_end=True,
+                      topo="main")
 
 
 def _lapel_border(name, S, corners, off):
-    """Raised border band + a top-stitch line inside it along a closed (counter-clockwise) outline."""
-    out = []
-    for k, (d, kind) in enumerate(((LAPEL_TRIM_IN, LAPEL_TRIM), (LAPEL_STITCH_IN, STITCH))):
-        cs = _inset(corners, d, closed=True)
-        out.append(_strip(f"{name}_{k}", S, _poly_step(cs + [cs[0]]), off=off, kind=kind))
-    return out
+    """Rolled edge + a top-stitch line inside it along a closed (counter-clockwise) outline."""
+    cs = _inset(corners, LAPEL_STITCH_IN, closed=True)
+    return [_roll(f"{name}_roll", S, corners, off),
+            _strip(f"{name}_stitch", S, _poly_step(cs + [cs[0]]), off=off, kind=STITCH)]
 
 
 def _front(S, lapel_top_z):
@@ -737,10 +757,10 @@ def _front(S, lapel_top_z):
     ca = _poly_n([B, Vv, T], 12)
     Mp = _tri_patch(Pattern(), [uz(p) for p in ab], [uz(p) for p in bc], [uz(p) for p in ca]).relax(60)
     def lapel_off(z):
-        """Full 16 mm over the flap, thinning to 10 mm where the lapel rolls up into the collar."""
+        """18 mm over the flap, thinning to 11 mm where the lapel rolls up into the collar."""
         t = min(max((z - LAPEL_BEND[1]) / (T.y - LAPEL_BEND[1]), 0.0), 1.0)
-        return 2 * FLAP_OFF + (FLAP_OFF + 0.002 - 2 * FLAP_OFF) * t
-    objs.append(_panel("coat_lapel_L", S, Mp, lapel_off, 2 * FLAP_OFF - 0.002))
+        return 0.018 + (0.011 - 0.018) * t
+    objs.append(_panel("coat_lapel_L", S, Mp, lapel_off, 0.016))
     objs += [_join(_lapel_border("coat_lapel_L_trim", S, [T, Vv, B, Mb, P], lapel_off), "coat_lapel_L_trim")]
 
     # ---- under lapel (wearer's right): visible part T2 -> P2 -> M2 -> X1, tucked 12 mm under the big one
@@ -759,15 +779,20 @@ def _front(S, lapel_top_z):
     Mr = Pattern()
     Mr.add_grid([[uz(p) for p in row] for row in G])
     Mr.relax(30)
-    r_off = FLAP_OFF + 0.002
-    objs.append(_panel("coat_lapel_R", S, Mr, r_off, r_off - 0.002))
-    vis = [X1, M2, P2, T2, Vv]                          # clockwise -> inset to the right = inside
-    trim_r = []
-    for k, (d, kind) in enumerate(((LAPEL_TRIM_IN, LAPEL_TRIM), (LAPEL_STITCH_IN, STITCH))):
-        cs = _inset(vis[::-1], d, closed=True)[::-1]
-        cs = [cs[0] + (cs[1] - cs[0]).normalized() * 0.004] + cs[1:]
-        trim_r.append(_strip(f"coat_lapel_R_trim_{k}", S, _poly_step(cs[:4] + [cs[3].lerp(cs[4], 0.85)]),
-                             off=r_off, kind=kind))
+    r_off = 0.012
+    objs.append(_panel("coat_lapel_R", S, Mr, r_off, r_off))
+    # its rolled edge + stitch along the visible outline (X1 -> M2 -> P2 -> T2 -> towards V), the rest is tucked
+    vis = [X1, M2, P2, T2, Vv]                          # clockwise
+    ccw = vis[::-1]
+    roll_cs = _inset(ccw, LAPEL_ROLL_R * 0.75, closed=True)[::-1]
+    st_cs = _inset(ccw, LAPEL_STITCH_IN, closed=True)[::-1]
+    def open_path(cs, back_off):
+        cs = [cs[0] + (cs[1] - cs[0]).normalized() * back_off] + cs[1:4] + [cs[3].lerp(cs[4], 0.85)]
+        return _poly_step(cs, 0.014)
+    pts = [S.point(x, z, off=r_off - LAPEL_ROLL_R * 0.35)[0] for x, z in open_path(roll_cs, 0.006)]
+    trim_r = [lib.lofted("coat_lapel_R_roll", lib.tube_rings(pts, LAPEL_ROLL_R, n=8, x_hint=(0, -1, 0)),
+                         cap_start=True, cap_end=True, topo="main"),
+              _strip("coat_lapel_R_stitch", S, open_path(st_cs, 0.004), off=r_off, kind=STITCH)]
     objs.append(_join(trim_r, "coat_lapel_R_trim"))
 
     def lapel_low_z(x):
@@ -874,26 +899,27 @@ def _yoke(index, verts):
 def _back(S):
     objs = []
     z0 = Z_BOTTOM + 0.005
-    # dagger-cross, bent onto the back; its top tip just under the yoke seam
-    em = lib.emblem_ornate("coat_back_emblem", size=EMBLEM_SIZE, thickness=0.006, normal=(0, 1, 0),
-                           up=(0, 0, 1), crescents=False)
-    top = max(v.co.z for v in em.data.vertices)
-    cz = _yoke_z(0.0) - 0.010 - top
+    # gothic cross (lib.emblem_gothic), bent onto the back: top just under the yoke point, stem tip at the
+    # belt top - its stem is the centre-back line (back_torso.png)
+    top_z, bot_z = _yoke_z(0.0) - 0.008, BELT_HI + 0.002
+    em = lib.emblem_gothic("coat_back_emblem", height=top_z - bot_z, thickness=0.005, normal=(0, 1, 0),
+                           up=(0, 0, 1), stem=EMBLEM_STEM)
+    zs = [v.co.z for v in em.data.vertices]
+    k = (top_z - bot_z) / (max(zs) - min(zs))           # exact fit between yoke point and belt
+    z_min = min(zs)
     for v in em.data.vertices:
-        x, h, z = v.co.x, v.co.y, v.co.z
-        p, n = S.point(x, cz + z, back=True)
+        x, h, z = v.co.x * k, v.co.y, bot_z + (v.co.z - z_min) * k
+        p, n = S.point(x, z, back=True)
         v.co = p + n * (h + 0.0012)
     lib.finalize(em, sharp_angle=25)
     objs.append(em)
-    tail = min(v.co.z for v in em.data.vertices)
-    # centre back seam from the end of the dagger's tail down under the belt
-    seams = [_strip("coat_seam_back_C", S, _poly_step([V((0.0, z0)), V((0.0, tail + 0.006))]), back=True,
-                    profile="round")]
+    seams = []
     # double piped princess seams converging to the waist
     for side in (1, -1):
         xt, xb = BACK_SEAM_X
         top_p = V((side * xt, _yoke_z(xt) - 0.004))
-        bot_p = V((side * xb, z0))
+        belt_p = V((side * xb, BELT_HI))
+        bot_p = top_p + (belt_p - top_p) * ((top_p.y - z0) / (top_p.y - BELT_HI))   # continue the V under the belt
         line = [bot_p, top_p] if side > 0 else [top_p, bot_p]
         seams += _double(f"coat_seam_back_{side}", S, line, back=True, first=-PIPE_GAP / 2, profile="round")
     objs.append(_join(seams, "coat_seams_back"))
