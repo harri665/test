@@ -29,9 +29,9 @@ CL = S.CLOTH
 TAU = math.tau
 NS = 16                                   # sleeve verts around (PLAN: sleeve/arm 16)
 NB = 32                                   # cuff verts around
-# SIDE (side_arm, side_skirt): the forearm angles forward from the elbow more than spec v2 gives, and
-# FRONT (front_skirt) shows the hands ~1.5 cm further out -> wrist and hand tip are offset together.
-WRIST_OFFSET = V((0.012, -0.035, 0.0))
+# SIDE (side_arm, side_skirt): the forearm angles forward from the elbow more than spec v2 gives ->
+# wrist and hand tip are moved forward together (the FRONT silhouette keeps them at spec x).
+WRIST_OFFSET = V((0.0, -0.035, 0.0))
 WRIST = S.WRIST + WRIST_OFFSET
 HAND_TIP = S.HAND_TIP + WRIST_OFFSET
 D1 = (S.ELBOW - S.SHOULDER).normalized()
@@ -57,17 +57,17 @@ SEAM_PHI_INDEX = 2                        # lengthwise seam runs along sleeve ve
 # face, no strap.  The cuff is cloth (topo main); only the rivets are rigid.
 BRACER_R = (0.075, 0.055)                 # outer radius at the elbow end / wrist end
 BRACER_TH = 0.005                         # double cloth layer (turned back)
-BRACER_TOP_DROP = -0.006                  # < 0: outer side of the top hem rides a little higher still
+BRACER_TOP_DROP = 0.0                     # 0: hem square to the forearm, so its outer side is already higher
 RIM_TOP = (0.012, 0.0045)                 # top hem (width along the arm, bulge above the cuff)
 RIM_BOT = (0.022, 0.0090)                 # thick rounded fold at the wrist end
 CUFF_FOLD = 0.0016                        # soft vertical cloth folds, deeper toward the flared top
-RIVET_R, RIVET_H = 0.0115, 0.0060         # 2 x 2 dome rivets
+RIVET_R, RIVET_H = 0.0130, 0.0065         # 2 x 2 dome rivets
 RIVET_PHI = (32.0, 82.0)                  # two columns on the front-outer face (0 outer, 90 front)
 RIVET_X = (0.20, 0.76)                    # two rows along the cuff (0 elbow end, 1 wrist end)
 HAND_SCALE = 1.15                         # checklist: larger, chunkier glove than round 1
 FINGER_THICK = (1.10, 1.20)               # review: plain THICK gloved fingers (width, depth factors)
 HAND_TURN = 25.0                          # front_arm_*: back of the hand turned toward the front (deg)
-HAND_ALIGN = 0.9                          # how far the curled middle tip is swung onto WRIST->HAND_TIP
+HAND_ALIGN = 0.7                          # how far the curled middle tip is swung onto WRIST->HAND_TIP
 HAND_RISE = 0.012                         # glove emerges right under the bracer rim, tips end at z ~0.785
 
 

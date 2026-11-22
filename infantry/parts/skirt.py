@@ -41,7 +41,7 @@ UNDER_HEM = C["under_skirt_hem_z"]
 # ---- read from the reference (docs/ref/*_skirt.png, measured with tools/compare.py masks) -------
 SIL_TOP = (BELT_LO, 0.133)          # FRONT/BACK outline is a straight A-line from the belt bottom ...
                                     # ... to (skirt_hem_z, skirt_hem_rx)
-SEAM_X = 0.0050                     # front panels meet edge to edge above the slit (under the buckle)
+SEAM_X = 0.0050                     # V edges start this far off the centre line
 VENT_SEAM = 0.0045                  # back panels meet edge to edge above the vent
 BACK_TIP_Z = Z_TIP - 0.040          # back view: back tips hang ~4 cm lower than the front tips
 FRONT_CORNER = (0.250, 0.510)       # front view: front panel outer corner (x, z) ...
@@ -49,28 +49,37 @@ FRONT_OUT_SLOPE, FRONT_OUT_MIN = 0.30, 0.095   # ... its outer edge climbs inwar
 BACK_OUT_X, BACK_CORNER_Z = 0.175, 0.410      # back view: back panels reach x 0.175, corner z 0.41
 A_GAP_F, FRONT_UNDER_A, A_BACK_X = 0.003, 0.025, 0.150   # layer A starts at the front panel's outer
                                     # border (double border line); the front panel runs on under it; A back edge x 0.15
-SIDE_A = dict(tip=-18.0, tip_z=0.420, front_z=0.515, back_z=0.600, top=Z_TOP)   # side view: one long
-                                    # diagonal hem from the back (high) to a point at the front-side
-SIDE_B = dict(front=322.0, back=58.0, tip=-10.0, tip_z=0.335, front_z=0.470, back_z=0.480, top=0.720)
-A_LIFT = (0.001, 0.010, 0.014)      # layer A over the panels: in the belt zone / below / extra flare
+# front closure (review + spec v3): the wearer's right panel laps over the left for ~10 cm under the
+# belt, buttoned twice, then its edge swings into the inverted V
+LAP_X, LAP_LIFT, LAP_CUT = 0.035, 0.011, (1.118, 1.062)
+UNDER_EDGE_X = 0.008                # left panel's hidden edge under the lap
+BUTTONS = [(0.014, 1.160), (0.014, 1.112)]     # (x, z) on the lap, final coordinates
+BUTTON_R = 0.012
+# side layers: side view hems run front-high -> back-low (all of them)
+SIDE_A = dict(tip=40.0, tip_z=0.420, front_z=0.515, back_z=0.470, top=Z_TOP)
+SIDE_B = dict(front=322.0, back=58.0, tip=48.0, tip_z=0.335, front_z=0.500, back_z=0.380, top=0.720)
+HIP_TIER, TIER_FRONT_A, TIER_BACK_X = C["hip_tier"], 352.0, 0.125   # hip-length upper tier over sides +
+                                    # back (side_skirt / back_torso refs): front end at the side, tail at the back
+A_LIFT = (0.001, 0.012, 0.014)      # layer A over the panels: in the belt zone / below / extra flare
                                     # (front view: the side flap stands off the body below z 0.75)
+TIER_LIFT = (0.001, 0.013)          # tier over layer A: in the belt zone / below
 B_LIFT = -0.014                     # layer B sits under the front / back panels
 FOLD_AMP, FOLD_COUNT, FOLD_SEED = 0.011, 8.0, 0.37
-# trim: wide border + piping (profile across the edge, s = inward from the cloth edge, h = off the cloth)
-T_OVER, T_RISE, T_UNDER = 0.003, 0.003, 0.006
-T_PROFILE = [(-T_OVER, -T_UNDER), (-T_OVER, T_RISE), (0.030, T_RISE), (0.034, 0.0009),
-             (0.039, 0.0020), (0.044, 0.0008), (0.044, -0.0020), (0.014, -T_UNDER)]
-# emblems: (x, z, half width, tilt deg) -- front ones lean toward the panel tip like the reference
-EMB_FRONT = (0.158, 0.565, 0.040, -8.0)
-EMB_BACK = (0.098, 0.500, 0.034, 0.0)
-EMB_VENT = (0.0, VENT_TOP - 0.075, 0.028, 0.0)
-# under skirt (box pleats)
+# trim: 3.5 cm raised border + piping (profile across the edge: s = inward from the cloth edge, h = off it)
+T_OVER, T_RISE, T_UNDER = 0.003, 0.0045, 0.006
+T_PROFILE = [(-T_OVER, -T_UNDER), (-T_OVER, T_RISE), (0.035, T_RISE), (0.040, 0.0012),
+             (0.046, 0.0027), (0.052, 0.0010), (0.052, -0.0020), (0.016, -T_UNDER)]
+# emblems (x, z, size, tilt deg): front = concave 4-point star + 2 crescent hooks, tilted; back = half
+# star + "C" crescent either side of the vent; vent top = split half-crosses with curls on both edges
+EMB_FRONT = (0.165, 0.555, 0.056, 18.0)
+EMB_BACK = (0.092, 0.490, 0.054, 0.0)
+EMB_VENT = (0.020, VENT_TOP - 0.090, 0.034, 0.0)
+EMB_TH = 0.0045
+# under skirt: FLAT, with two vertical seams either side of the centre slit
 U_OFF, U_GAP_X, U_GAP_Y = 0.018, 0.040, 0.028
-U_UNIT_F, U_N_F = 10.0, 5            # pleat width (deg) and count from the front groove outward
-U_UNIT_B, U_N_B = 11.0, 3            # pleats around the back vent (a face centred on the vent)
-U_N_PLAIN = 8
-U_GAP, U_DEPTH = 0.26, 0.016         # groove share of a pleat and groove depth at the hem
 U_SLIT_X = 0.003
+U_COLS = [(270.0, 325.0, 12), (325.0, 60.0 + 360.0, 8), (60.0 + 360.0, 450.0, 5)]   # (from, to, n) deg
+U_SEAM_X = 0.058                    # seam lines at x = +-this at the hem, radiating from the belt
 
 # trouser outer envelope from the legs author (z: max|x|, y-front, y-back); the under skirt keeps
 # U_CLEAR outside it and the coat keeps COAT_OVER_UNDER outside the under skirt
@@ -78,15 +87,17 @@ TROUSER_ENV = [(1.20, 0.119, -0.105, 0.105), (1.15, 0.131, -0.109, 0.113), (1.10
                (1.05, 0.157, -0.120, 0.130), (1.00, 0.176, -0.118, 0.124), (0.96, 0.191, -0.117, 0.120),
                (0.93, 0.200, -0.116, 0.117), (0.90, 0.202, -0.107, 0.107), (0.85, 0.206, -0.106, 0.101),
                (0.80, 0.211, -0.106, 0.099), (0.75, 0.214, -0.102, 0.094), (0.70, 0.216, -0.102, 0.090),
-               (0.65, 0.217, -0.100, 0.085), (0.60, 0.219, -0.097, 0.079), (0.55, 0.220, -0.098, 0.077),
-               (0.50, 0.226, -0.096, 0.082), (0.45, 0.237, -0.093, 0.098), (0.40, 0.245, -0.084, 0.113),
-               (0.35, 0.254, -0.080, 0.125), (0.30, 0.253, -0.072, 0.125)]
+               (0.65, 0.217, -0.100, 0.085), (0.60, 0.217, -0.087, 0.086), (0.55, 0.218, -0.086, 0.085),
+               (0.50, 0.224, -0.082, 0.091), (0.45, 0.236, -0.079, 0.111), (0.42, 0.243, -0.073, 0.121),
+               (0.40, 0.248, -0.070, 0.127), (0.38, 0.253, -0.067, 0.131), (0.35, 0.257, -0.062, 0.139),
+               (0.32, 0.257, -0.058, 0.143), (0.30, 0.255, -0.053, 0.142), (0.29, 0.253, -0.049, 0.139)]
 U_CLEAR, COAT_OVER_UNDER, B_GAP = 0.008, 0.010, 0.024   # B_GAP: room for layer B at the sides
 
 NR_FRONT, NC_FRONT = 27, 7
 NR_BACK, NC_BACK = 28, 7
-NR_A, NC_A_FRONT, NC_A_BACK = 25, 6, 8
-NR_B, NC_B_FRONT, NC_B_BACK = 12, 8, 6
+NR_A, NC_A_FRONT, NC_A_BACK = 25, 9, 4
+NR_B, NC_B_FRONT, NC_B_BACK = 12, 10, 3
+NR_TIER, NC_TIER = 14, 9
 NR_UNDER = 14
 
 
@@ -314,7 +325,7 @@ class Panel:
             self.Q.append(row)
 
     def P(self, a, z):
-        return surf(a, z, self.lift(z) if callable(self.lift) else self.lift)
+        return surf(a, z, self.lift(a, z) if callable(self.lift) else self.lift)
 
     def frame(self, a, z):
         """Point, d/da, d/dz and outward unit normal."""
@@ -368,8 +379,8 @@ def _trim(name, panel, path):
     for piece, (i0, i1) in enumerate(zip(cuts, cuts[1:])):
         rings = []
         for i in range(i0, i1 + 1):
-            lim = min((run[i] - run[i0]) * half[i0] if i0 in half else 9.0,
-                      (run[i1] - run[i]) * half[i1] if i1 in half else 9.0)
+            lim = min((run[i] - run[i0]) * half[i0] + 0.003 if i0 in half else 9.0,
+                      (run[i1] - run[i]) * half[i1] + 0.003 if i1 in half else 9.0)
             p, pa, pz, n = F[i]
             ws = []
             for j0, j1 in ((i - 1, i), (i, i + 1)):
@@ -416,11 +427,35 @@ def _back_out_x(z, x=BACK_OUT_X):
     return min(x, 0.8 * section(z)[1])
 
 
-def front_panel():
-    return Panel(lambda z: _angle_for_x(_front_edge_x(z), z, True),
-                 lambda z: _angle_for_x(_front_out_x(z) + FRONT_UNDER_A, z, True),
+def _lap_lift_z(z):
+    """Lift of the overlapping (wearer's right) front panel near the centre: small in the belt
+    zone, full on the buttoned overlap, gone once the panels have parted."""
+    return ((0.002 + (LAP_LIFT - 0.002) * _sstep(BELT_LO + 0.003, BELT_LO - 0.025, z))
+            * (1.0 - _sstep(LAP_CUT[1] + 0.005, LAP_CUT[1] - 0.045, z)))
+
+
+def _over_edge_x(z):
+    """Inner edge of the overlapping panel, built on +X and mirrored: crosses the centre by LAP_X
+    under the belt, swings into the inverted V between LAP_CUT[0] and LAP_CUT[1]."""
+    w = _sstep(LAP_CUT[0], LAP_CUT[1], z)
+    return -LAP_X * (1.0 - w) + _front_edge_x(z) * w
+
+
+def front_panel(over):
+    """over=True: the wearer's right panel (built on +X, then mirrored) whose top laps over the left."""
+    if over:
+        def lift(a, z):
+            if z < LAP_CUT[1] - 0.05:
+                return 0.0
+            x = section(z)[1] * math.cos(a)
+            return _lap_lift_z(z) * (1.0 - _sstep(0.035, 0.080, x))
+        e0 = lambda z: _angle_for_x(_over_edge_x(z), z, True, lift(D(270.0), z))  # noqa: E731
+    else:
+        lift = 0.0
+        e0 = lambda z: _angle_for_x(_smax(UNDER_EDGE_X, _front_edge_x(z), 0.003), z, True)  # noqa: E731
+    return Panel(e0, lambda z: _angle_for_x(_front_out_x(z) + FRONT_UNDER_A, z, True),
                  lambda u: Z_TIP + (FRONT_CORNER[1] - Z_TIP) * u,
-                 [i / NC_FRONT for i in range(NC_FRONT + 1)], NR_FRONT, 0.0)
+                 [i / NC_FRONT for i in range(NC_FRONT + 1)], NR_FRONT, lift)
 
 
 def back_panel():
@@ -451,7 +486,25 @@ def _a_edges():
 def side_a():
     e0, e1 = _a_edges()
     ut, hem = _side_hem(SIDE_A, e0, e1)
-    return Panel(e0, e1, hem, _cols(NC_A_FRONT, ut, NC_A_BACK), NR_A, _a_lift)
+    return Panel(e0, e1, hem, _cols(NC_A_FRONT, ut, NC_A_BACK), NR_A, lambda a, z: _a_lift(z))
+
+
+def _tier_lift(z):
+    return _a_lift(z) + TIER_LIFT[0] + (TIER_LIFT[1] - TIER_LIFT[0]) * _sstep(BELT_LO + 0.003, BELT_LO - 0.030, z)
+
+
+def _tier_edges():
+    e0 = lambda z: D(TIER_FRONT_A - 360.0)  # noqa: E731
+    e1 = lambda z: _angle_for_x(_back_out_x(z, TIER_BACK_X), z, False, _tier_lift(z))  # noqa: E731
+    hem = lambda u: HIP_TIER[0] + (HIP_TIER[1] - HIP_TIER[0]) * u  # noqa: E731
+    return e0, e1, hem
+
+
+def hip_tier():
+    """Hip-length upper tier: from the side round to beside the back vent, its hem sloping down
+    from hip_tier[0] at the front end to a pointed tail at hip_tier[1] at the back."""
+    e0, e1, hem = _tier_edges()
+    return Panel(e0, e1, hem, [i / NC_TIER for i in range(NC_TIER + 1)], NR_TIER, lambda a, z: _tier_lift(z))
 
 
 def side_b():
@@ -483,73 +536,151 @@ def _path_side(panel, step, k0_front=0, k0_back=0):
     return [(k, 0) for k in down] + [(nr, j) for j in range(1, nc + 1)] + [(k, nc) for k in up]
 
 
-# ------------------------------------------------------------------ under skirt (box pleats)
+# ------------------------------------------------------------------ under skirt (flat + seams)
 def _under_half():
-    """Left half (front groove/slit -> back centre), rows of points.  Faces stay on the under
-    surface, grooves sink inward; pleats are closed under the belt and open toward the hem."""
+    """Left half (front slit -> back centre), rows of points on the flat under-skirt surface."""
     zs = [Z_TOP, Z_ROW1] + [Z_ROW1 + (UNDER_HEM - Z_ROW1) * i / (NR_UNDER - 1) for i in range(1, NR_UNDER)]
     rows = []
     for z in zs:
-        v = _sstep(0.0, 1.0, (Z_ROW1 - z) / (Z_ROW1 - UNDER_HEM))
-        g = 0.10 + (U_GAP - 0.10) * v          # pleats stitched nearly closed under the belt
-        dep = U_DEPTH * v
         rx = section(z, "under")[1]
-        a_slit = math.tau - math.acos(U_SLIT_X / rx)
-        cols = [(a_slit, -dep)]
-        a = D(270.0)
-        for i in range(U_N_F):
-            a_s = a + D(U_UNIT_F * (i + g / 2))
-            if i == 0:
-                a_s = max(a_s, a_slit + D(1.0))
-            cols += [(a_s, 0.0), (a + D(U_UNIT_F * (i + 1 - g / 2)), 0.0)]
-            if i < U_N_F - 1:                       # the last face runs straight into the plain sides
-                cols.append((a + D(U_UNIT_F * (i + 1)), -dep))
-        a_end_f = a + D(U_UNIT_F * U_N_F)
-        a_b0 = D(450.0 - U_UNIT_B * (U_N_B - 0.5))
-        for i in range(1, U_N_PLAIN + 1):
-            cols.append((a_end_f + (a_b0 - a_end_f) * i / (U_N_PLAIN + 1), 0.0))
-        for m in range(U_N_B):
-            gb = a_b0 + D(U_UNIT_B * m)
-            cols += [(gb, -dep), (gb + D(U_UNIT_B * g / 2), 0.0)]
-            if m < U_N_B - 1:
-                cols.append((gb + D(U_UNIT_B * (1 - g / 2)), 0.0))
-        cols.append((D(450.0), 0.0))
-        rows.append([surf(a, z, 0.0, "under", e) for a, e in cols])
+        angs = [math.tau - math.acos(U_SLIT_X / rx)]
+        for a0, a1, n in U_COLS:
+            angs += [D(a0 + (a1 - a0) * i / n) for i in range(1, n + 1)]
+        rows.append([surf(a, z, 0.0, "under") for a in angs])
     # folded hem: one loop turned up inside
     rows.append([p + V((0, 0, 0.022)) - V((p.x, p.y - section(UNDER_HEM)[0], 0)).normalized() * 0.004
                  for p in rows[-1]])
     return rows
 
 
+def _under_seam(name):
+    """Vertical seam line on the under skirt (left one; mirrored), radiating from the belt."""
+    pts, nrm = [], []
+    a_hem = math.tau - math.acos(U_SEAM_X / section(UNDER_HEM, "under")[1])
+    for i in range(12):
+        z = SLIT_TOP + 0.02 + (UNDER_HEM + 0.006 - SLIT_TOP - 0.02) * i / 11
+        p = surf(a_hem, z, 0.0, "under")
+        q = surf(a_hem + 1e-3, z, 0.0, "under")
+        r = surf(a_hem, z + 1e-3, 0.0, "under")
+        n = (q - p).cross(r - p).normalized()
+        if n.x * p.x + n.y * p.y < 0:
+            n = -n
+        pts.append(p)
+        nrm.append(n)
+    return lib.strip_along(name, pts, nrm, width=0.009, thickness=0.0022, sink=0.0008, profile="round")
+
+
 # ------------------------------------------------------------------ emblems
-def _emblem(name, panel, x, z, size, tilt, front, crescents=True, clear=-0.0012):
-    a = _angle_for_x(x, z, front, panel.lift(z) if callable(panel.lift) else panel.lift)
+def _relief_star(name, tips, notches, th):
+    """Closed relief star in local XY: alternating tip / notch outline round a raised centre."""
+    verts, faces = [], []
+    ring = []
+    for t, n in zip(tips, notches):
+        ring += [t, n]
+    m = len(ring)
+    for zf in (0.0, th):
+        verts.append(V((0, 0, zf + (th * 0.45 if zf else 0.0))))
+        verts += [V((p[0], p[1], zf * (0.35 if k % 2 == 0 else 1.0))) for k, p in enumerate(ring)]
+    off = m + 1
+    for k in range(0, m, 2):
+        f = (0, 1 + (k - 1) % m, 1 + k, 1 + (k + 1) % m)
+        faces.append(tuple(i + off for i in f))
+        faces.append(tuple(reversed(f)))
+    for k in range(m):
+        a, b = 1 + k, 1 + (k + 1) % m
+        faces.append((a, b, b + off, a + off))
+    return lib.mesh_object(name, verts, faces, topo="rigid", sharp_angle=25)
+
+
+def _relief_arc(name, c, r, a0, a1, w0, w1, th, n=8):
+    """Crescent / hook: a tapered arc band (closed, quad end caps) in local XY."""
+    rings = []
+    for i in range(n + 1):
+        t = i / n
+        a = math.radians(a0 + (a1 - a0) * t)
+        d = V((math.cos(a), math.sin(a), 0))
+        w = w0 + (w1 - w0) * math.sin(math.pi * t) if w1 >= w0 else w0 * (1 - t) + w1 * t
+        p = V((c[0], c[1], 0)) + d * r
+        rings.append([p - d * w, p - d * w * 0.6 + V((0, 0, th)), p + d * w * 0.6 + V((0, 0, th)), p + d * w])
+    vs, fs = lib.loft(rings, closed=True)
+    last = n * 4
+    fs += [(3, 2, 1, 0), (last, last + 1, last + 2, last + 3)]
+    return lib.mesh_object(name, vs, fs, topo="rigid", sharp_angle=30)
+
+
+def _emblem_local(name, kind, s, out):
+    """Build an emblem in local coordinates (X right, Y up, Z out of the cloth).
+    out = +1/-1: which local X direction points away from the back vent (back emblems)."""
+    th = EMB_TH
+    pieces = []
+    if kind == "front":                 # concave 4-point star + 2 crescent hooks under it
+        tips = [(0, 1.25 * s), (0.95 * s, 0), (0, -1.15 * s), (-0.95 * s, 0)]
+        k = 0.17 * s
+        notches = [(k, k), (k, -k), (-k, -k), (-k, k)]
+        pieces.append(_relief_star(name + "_star", tips, notches, th))
+        for sx in (-1, 1):
+            pieces.append(_relief_arc(name + "_hook", (sx * 0.52 * s, -0.55 * s), 0.36 * s,
+                                      90 + sx * 100, 90 + sx * 230, 0.02 * s, 0.10 * s, th * 0.85))
+    elif kind == "back":                # half star (up / outward / down) + "C" crescent on the vent side
+        tips = [(0, 1.35 * s), (out * 1.0 * s, 0), (0, -1.5 * s), (-out * 0.12 * s, 0)]
+        k = 0.18 * s
+        notches = [(out * k, k), (out * k, -k), (-out * 0.05 * s, -0.25 * s), (-out * 0.05 * s, 0.25 * s)]
+        pieces.append(_relief_star(name + "_star", tips, notches, th))
+        a_mid = 0.0 if out < 0 else 180.0          # C opens toward the vent
+        pieces.append(_relief_arc(name + "_c", (-out * 0.42 * s, -0.42 * s), 0.40 * s,
+                                  a_mid + 50, a_mid + 310, 0.03 * s, 0.13 * s, th * 0.9))
+    else:                               # vent top: split half-cross along the vent edge + curl
+        tips = [(0, 1.7 * s), (out * 1.15 * s, 0.1 * s), (0, -2.0 * s), (-out * 0.15 * s, 0)]
+        k = 0.16 * s
+        notches = [(out * k, 0.1 * s + k), (out * k, 0.1 * s - k), (-out * 0.04 * s, -0.2 * s),
+                   (-out * 0.04 * s, 0.2 * s)]
+        pieces.append(_relief_star(name + "_star", tips, notches, th))
+        a0 = 90.0 if out > 0 else 90.0
+        pieces.append(_relief_arc(name + "_curl", (out * 0.95 * s, -0.22 * s), 0.30 * s,
+                                  a0, a0 - out * 230, 0.10 * s, 0.03 * s, th * 0.85))
+    return lib.join(pieces, name, topo="rigid")
+
+
+def _emblem(name, panel, x, z, size, tilt, front, kind, clear=T_RISE + 0.0006):
+    """Rigid emblem on the panel at (x, z), aligned to the cloth normal; it rides just above the
+    raised borders it overlaps (like the reference, whose emblems reach over the binding)."""
+    a = _angle_for_x(x, z, front)
+    for _ in range(3):
+        rx = section(z)[1]
+        a += (x - panel.P(a, z).x) / (-rx * math.sin(a))
     p0, pa, pz, n = panel.frame(a, z)
     up = (pz - n * pz.dot(n)).normalized()
-    right = up.cross(n).normalized()
-    if not front:
-        tilt = -tilt
     up = (Matrix.Rotation(D(tilt), 3, n) @ up).normalized()
     right = up.cross(n).normalized()
-    # sink so the centre touches and the tips stay close on the curved cloth
+    out = 1.0 if right.x * p0.x > 0 else -1.0     # local +X pointing away from the centre line?
+    ob = _emblem_local(name, kind, size, out)
+    # the cloth curves away under a flat emblem: sink the centre so the tips stay close
     h = -1.0
-    for dx, dy in ((size, 0), (-size, 0), (0, 1.3 * size), (0, -2.0 * size), (0.6 * size, -0.6 * size),
-                   (-0.6 * size, -0.6 * size), (0.3 * size, 0.3 * size)):
-        q3 = p0 + right * dx + up * dy
-        # project onto the surface along n: param step via the tangent plane
-        g11, g12, g22 = pa.dot(pa), pa.dot(pz), pz.dot(pz)
-        d = q3 - p0
+    g11, g12, g22 = pa.dot(pa), pa.dot(pz), pz.dot(pz)
+    det = g11 * g22 - g12 * g12
+    for dx, dy in ((size, 0), (-size, 0), (0, size), (0, -size), (0.5 * size, -0.5 * size),
+                   (-0.5 * size, -0.5 * size)):
+        d = right * dx + up * dy
         b1, b2 = pa.dot(d), pz.dot(d)
-        det = g11 * g22 - g12 * g12
         da, dz = (g22 * b1 - g12 * b2) / det, (g11 * b2 - g12 * b1) / det
-        q = panel.P(a + da, z + dz)
-        h = max(h, (q - p0).dot(n))
-    ob = lib.emblem_ornate(name, size=size, thickness=0.004, loc=p0 + n * (h + clear), normal=n, up=up,
-                           crescents=crescents)
+        h = max(h, (panel.P(a + da, z + dz) - p0).dot(n))
+    m = Matrix((right, up, n)).transposed().to_4x4()
+    ob.data.transform(Matrix.Translation(p0 + n * (h + clear)) @ m)
+    ob.data.update()
+    lib.finalize(ob, sharp_angle=25)
     for o in [o for o in bpy.data.objects if o.name == name and o is not ob]:
         o.name = name + "_tmp"
     ob.name = ob.data.name = name
     return ob
+
+
+def _button(name, panel, x, z):
+    """Button on the lap (x, z in final coordinates; the over panel is built on +X -> use -x)."""
+    a = _angle_for_x(-x, z, True)
+    for _ in range(3):
+        a += (-x - panel.P(a, z).x) / (-section(z)[1] * math.sin(a))
+    p0, _, _, n = panel.frame(a, z)
+    return lib.rivet(name, radius=BUTTON_R, height=0.007, n=8, loc=p0 + n * (T_RISE - 0.0005), normal=n)
 
 
 # ------------------------------------------------------------------ queries for other authors
@@ -564,11 +695,21 @@ def _in_layer_a(a, z):
     return z >= hem((a - lo) / (hi - lo))
 
 
+def _in_tier(a, z):
+    e0, e1, hem = _tier_edges()
+    a = (a + math.pi) % math.tau - math.pi
+    lo, hi = e0(z), e1(z)
+    if not lo <= a <= hi or z > Z_TOP:
+        return False
+    return z >= hem((a - lo) / (hi - lo))
+
+
 def outer_radius(a_deg, z):
     """Horizontal distance from the Z axis to the outermost skirt cloth at (angle, z), LEFT side
-    (mirror the angle for the right).  Includes layer A and the trim rise.  Gear hangs on this."""
+    (mirror the angle for the right).  Includes layer A, the hip tier and the border rise.
+    Gear hangs on this."""
     a = D(a_deg)
-    lift = _a_lift(z) if _in_layer_a(a, z) else 0.0
+    lift = _tier_lift(z) if _in_tier(a, z) else (_a_lift(z) if _in_layer_a(a, z) else 0.0)
     p = surf(a, z, lift + T_RISE)
     return math.hypot(p.x, p.y)
 
@@ -584,12 +725,24 @@ def build():
     global _EMB_AZ
     _EMB_AZ = None
     objs = []
+    pairs = []
 
-    fp = front_panel()
-    k_out = fp.nr + 1                    # outer edge runs on under layer A: no binding there
-    f_l = _sheet("skirt_front_L", fp)
-    ft_l = _trim("skirt_front_trim_L", fp, _path_main(fp, k_out))
-    ef = _emblem("skirt_emblem_front_L", fp, *EMB_FRONT, front=True, clear=0.0012)
+    # front: the left panel lies under, the right one (built on +X, mirrored) laps over it
+    fu = front_panel(over=False)
+    fo = front_panel(over=True)
+    k0 = next(k for k in range(fu.nr + 1) if fu.Q[k][0][1] <= LAP_CUT[0] - 0.012)
+    f_l = _sheet("skirt_front_L", fu)
+    ft_l = _trim("skirt_front_trim_L", fu, [p for p in _path_main(fu, fu.nr + 1) if not (p[1] == 0 and p[0] < k0)])
+    f_r = _sheet("skirt_front_R", fo)
+    ft_r = _trim("skirt_front_trim_R", fo, _path_main(fo, fo.nr + 1))
+    btn = [_button(f"skirt_button_{i}", fo, x, z) for i, (x, z) in enumerate(BUTTONS)]
+    for o in [f_r, ft_r] + btn:
+        m = lib.mirror_copy(o, o.name + "_m")
+        _remove(o)
+        m.name = m.data.name = m.name[:-2]
+        objs.append(m)
+    objs += [f_l, ft_l]
+    pairs.append(_emblem("skirt_emblem_front_L", fu, *EMB_FRONT, front=True, kind="front"))
 
     bp = back_panel()
     k_out = _rows_up_to(bp, len(bp.us) - 1, SIDE_A["back_z"] + 0.03)
@@ -597,22 +750,25 @@ def build():
     path = _path_main(bp, k_out)
     k_vent = next(k for k in range(bp.nr + 1) if bp.Q[k][0][1] < VENT_TOP + 0.04)
     path = [p for p in path if not (p[1] == 0 and 0 < p[0] < k_vent and p[0] % 2)]   # straight part: every 2nd
-    bt_l = _trim("skirt_back_trim_L", bp, path)
-    eb = _emblem("skirt_emblem_back_L", bp, *EMB_BACK, front=False, clear=0.0003)
-    ev = _emblem("skirt_emblem_vent", bp, *EMB_VENT, front=False, crescents=False, clear=T_RISE + 0.001)
+    pairs += [b_l, _trim("skirt_back_trim_L", bp, path)]
+    pairs.append(_emblem("skirt_emblem_back_L", bp, *EMB_BACK, front=False, kind="back"))
+    pairs.append(_emblem("skirt_emblem_vent_L", bp, *EMB_VENT, front=False, kind="vent"))
 
     pa = side_a()
-    a_l = _sheet("skirt_side_L", pa)
-    at_l = _trim("skirt_side_trim_L", pa, _path_side(pa, 2))
+    pairs += [_sheet("skirt_side_L", pa), _trim("skirt_side_trim_L", pa, _path_side(pa, 2))]
 
     pb = side_b()
     nr = pb.nr
-    b2_l = _sheet("skirt_side_lower_L", pb)
-    b2t_l = _trim("skirt_side_lower_trim_L", pb, _path_side(pb, 1, k0_front=nr - 2, k0_back=nr - 2))
+    pairs += [_sheet("skirt_side_lower_L", pb),
+              _trim("skirt_side_lower_trim_L", pb, _path_side(pb, 1, k0_front=nr - 2, k0_back=nr - 2))]
 
-    for o in (f_l, ft_l, ef, b_l, bt_l, eb, a_l, at_l, b2_l, b2t_l):
+    pt = hip_tier()
+    pairs += [_sheet("skirt_hip_tier_L", pt), _trim("skirt_hip_tier_trim_L", pt, _path_side(pt, 2))]
+
+    pairs.append(_under_seam("skirt_under_seam_L"))
+
+    for o in pairs:
         objs += [o, lib.mirror_copy(o, o.name[:-2] + "_R")]
-    objs.append(ev)
 
     half = lib.lofted("skirt_under_L", _under_half(), closed=False, topo="main")
     other = lib.mirror_copy(half, "skirt_under_R")

@@ -29,14 +29,14 @@ C = S.CLOTH
 # (docs/ref/front_legs.png, side_legs.png, back_legs.png, measured with tools/compare.py at 1.895 m figure height)
 BOOT_DX = 0.008          # boot sits this far outside the spec HEEL->TOE line (ref FRONT: shaft x 0.113-0.22)
 SY = 0.020               # heel counter centre this far behind the ankle (ref SIDE: heel back ~0.09 behind it)
-SHAFT_EASE = (0.0145, 0.020, 0.010)   # slim shaft = bare leg + this (side, back, front); ref shaft 0.107 wide,
+SHAFT_EASE = (0.0145, 0.030, 0.0085)   # slim shaft = bare leg + this (side, back, front); ref shaft 0.107 wide,
                                      # ~0.12 deep in SIDE (the reference's shaft is deeper than wide)
 SHAFT_DX = 0.008         # shaft axis this far outside the bare leg line (ref FRONT: shaft centre x ~0.167)
 SOLE_T = 0.030           # sole + welt thickness (review: reference sole ~3 cm)
 ZB = SOLE_T - 0.003      # bottom of the upper, sunk into the sole
 BLOUSE_DX = 0.001        # blouse centre vs boot axis (ref FRONT: blouse x 0.064-0.256 at z 0.32 -> centre 0.16)
 BLOUSE_DY = 0.030        # ... and hangs back (ref SIDE: blouse centre ~0.05 behind the hat centre line)
-CUFF_STRAP_Z = (0.153, 0.201)   # wide strap round the boot top (ref FRONT: strap z 0.15-0.205)
+CUFF_STRAP_Z = (0.157, 0.207)   # wide strap round the boot top (ref FRONT: strap z 0.15-0.205)
 
 
 # ------------------------------------------------------------------ small helpers
@@ -211,13 +211,13 @@ _UNTWIST = {0: 0.55, 1: 0.85}                  # ... and part of the split ring'
 # bloused lower leg, top -> bottom: (z, radius about lower_c, sag weight).  ONE smooth overhang (review:
 # the reference blouse is a single puff), its rounded hem sags a little toward the front.
 BLOUSE_ROWS = [
-    (0.474, 0.0905, 0.00), (0.441, 0.0950, 0.00), (0.410, 0.0975, 0.00), (0.380, 0.0990, 0.05),
-    (0.352, 0.1000, 0.15), (0.327, 0.1000, 0.35), (0.307, 0.0985, 0.60), (0.294, 0.0945, 0.85),
-    (0.2865, 0.0870, 1.00), (0.2845, 0.0770, 1.00),                                          # rounded hem, underside
+    (0.474, 0.0905, 0.00), (0.442, 0.0950, 0.00), (0.413, 0.0975, 0.00), (0.385, 0.0990, 0.05),
+    (0.359, 0.1000, 0.15), (0.336, 0.1000, 0.35), (0.316, 0.0985, 0.60), (0.303, 0.0945, 0.85),
+    (0.2955, 0.0870, 1.00), (0.2935, 0.0770, 1.00),                                          # rounded hem, underside
 ]
 # then a slim gathered gaiter round the shin, tucked over the boot rim into the boot:
 # (z, offset from the boot shaft surface, sag weight)
-TUCK_ROWS = [(0.2800, 0.0060, 0.9), (0.2690, 0.0032, 0.4), (0.2590, 0.0042, 0.0), (0.2505, 0.0028, 0.0),
+TUCK_ROWS = [(0.2890, 0.0060, 0.9), (0.2740, 0.0042, 0.4), (0.2610, 0.0032, 0.0), (0.2505, 0.0026, 0.0),
              (0.2490, -0.0006, 0.0), (0.2470, -0.0044, 0.0), (0.2400, -0.0055, 0.0), (0.2280, -0.0060, 0.0)]
 SAG = 0.008                     # how far the hem droops (most at the front)
 
@@ -355,7 +355,7 @@ def build_knee_and_blouse(side, top_ring):
         for j in range(NL):
             th = TAU * j / NL
             p = boot_rel_pt(z, d, th)
-            p.z -= sw * SAG * _sag(th, side, 0.2845)
+            p.z -= sw * SAG * _sag(th, side, 0.2935)
             ring.append(V((p.x * side, p.y, p.z)))
         rings.append(ring)
     blouse = lib.lofted("trouser_blouse_" + sfx, rings, topo="main", sharp_angle=75)
@@ -398,16 +398,16 @@ CUFF = [(0.0010, T - 0.016), (0.0016, T - 0.004), (0.0008, T + 0.0015), (-0.0012
 # foot cross-sections, from the ankle patch (0) to the toe (9):
 #   y of the sole line, (y, z) of the top centre line, max half width, half width at the sole, corner angle
 FOOT = [
-    (-0.048, -0.050, 0.160, 0.0540, 0.0530, 44.0),
-    (-0.066, -0.070, 0.136, 0.0620, 0.0600, 46.0),
-    (-0.084, -0.089, 0.118, 0.0690, 0.0670, 48.0),
-    (-0.102, -0.107, 0.1085, 0.0750, 0.0730, 50.0),
-    (-0.120, -0.124, 0.1050, 0.0790, 0.0770, 52.0),
-    (-0.137, -0.141, 0.1040, 0.0820, 0.0790, 53.0),
-    (-0.153, -0.157, 0.1020, 0.0830, 0.0800, 54.0),
-    (-0.167, -0.170, 0.0990, 0.0815, 0.0785, 55.0),
-    (-0.178, -0.180, 0.0935, 0.0770, 0.0740, 56.0),
-    (-0.186, -0.187, 0.0835, 0.0670, 0.0640, 57.0),
+    (-0.048, -0.050, 0.1600, 0.0540, 0.0530, 44.0),
+    (-0.066, -0.070, 0.1360, 0.0620, 0.0600, 46.0),
+    (-0.084, -0.089, 0.1280, 0.0690, 0.0670, 48.0),
+    (-0.102, -0.107, 0.1185, 0.0750, 0.0730, 50.0),
+    (-0.120, -0.124, 0.1150, 0.0790, 0.0770, 52.0),
+    (-0.137, -0.141, 0.1140, 0.0820, 0.0790, 53.0),
+    (-0.153, -0.157, 0.1120, 0.0830, 0.0800, 54.0),
+    (-0.167, -0.170, 0.1090, 0.0815, 0.0785, 55.0),
+    (-0.178, -0.180, 0.1035, 0.0770, 0.0740, 56.0),
+    (-0.186, -0.187, 0.0935, 0.0670, 0.0640, 57.0),
 ]
 TOE_STEP = 0.0028                 # toe cap leather sits this far proud -> seam line
 FOOT_US = [(1, 0), (2, 0), (3, 0), (4, 0), (4.86, 0), (4.97, 1), (6, 1), (7, 1), (8, 1), (9, 1)]
@@ -710,14 +710,14 @@ def build_straps(upper):
     tf = path_frames(bvh, tongue_pts, subdiv=2)
     tongue = band(sm, bvh, tf, 0.044, 0.0030)
     bvh = _bvh([upper, sm])
-    for i in (2, 4, 9):
+    for i in (2, 4):
         p, t, b, n = tongue[i]
         lf = path_frames(bvh, [p - b * 0.026, p, p + b * 0.026], subdiv=2)
         band(sm, bvh, lf, 0.006, 0.0022)
     # ---- ankle / instep strap: from the outer ankle (under the cuff strap) diagonally over the instep to the
     #      inner welt, with a square buckle on the outer side
     bvh = _bvh([upper, sm])
-    ip = [(0.058, 0.002, 0.150), (0.058, -0.026, 0.138), (0.048, -0.054, 0.127), (0.025, -0.076, 0.118),
+    ip = [(0.056, 0.000, 0.146), (0.056, -0.026, 0.136), (0.048, -0.054, 0.127), (0.025, -0.076, 0.118),
           (-0.004, -0.090, 0.110), (-0.034, -0.101, 0.096), (-0.056, -0.108, 0.075), (-0.068, -0.112, 0.052),
           (-0.072, -0.114, 0.030)]
     inst = band(sm, bvh, path_frames(bvh, ip, subdiv=3), 0.036, 0.0040)
