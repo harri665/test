@@ -57,7 +57,7 @@ GD_T = 0.0050
 GD_TRIM = (0.012, 0.0022)
 GD_PHI = (RAD(-96), RAD(104))   # front edge .. back edge, 0 = straight out from the arm (ref side:
                                 # the guard sits a little behind the arm centre)
-GD_TOP_Z = (1.570, 1.503)  # top edge cap: at its outer face / at its front and back legs.  The outer
+GD_TOP_Z = (1.550, 1.503)  # top edge cap: at its outer face / at its front and back legs.  The outer
                            # face continues as a cap over the shoulder joint and stops under the
                            # under-plate (ref side: the guard runs up under the plate's arch)
 GD_GAP = 0.004           # air between guard top and the under-plate's underside
