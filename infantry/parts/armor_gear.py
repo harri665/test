@@ -261,7 +261,7 @@ def _outer_ok():
 
 
 _USE_OUTER = _outer_ok()
-SKIRT_MARGIN = 0.002       # outer_radius vs the real skirt mesh (faces bulge a little between loops)
+SKIRT_MARGIN = 0.0025      # the real skirt mesh exceeds outer_radius by <= 2.5 mm above z 0.85 (skirt agent)
 
 
 def _skirt_r(th, z):
