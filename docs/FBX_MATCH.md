@@ -77,3 +77,17 @@ emblem guard. They must clear the coat (including the new rolled collar) and the
 | arms.py | sleeve/hand agent | A1, A3 (I6) |
 | cuffs.py | cuff agent | A2 (I6) |
 | pose.py + tools | T-pose agent (already running) | must keep working on the changed parts |
+
+## Result
+
+All seven part files and the T-pose stage landed (see the per-region commits "Round 5: ...").
+Whole model: 27,144 quads / 54,288 triangles, all quads, 0 n-gons, 0 non-manifold.
+Side-by-sides: `docs/ref/fbx/final_compare_tpose.png` (ours T-posed) and `final_compare_apose.png`.
+Exports: `out/infantry_trooper.glb/.blend` (A-pose) and `out/infantry_trooper_tpose.glb/.blend`
+(T-pose, rigged: 15-bone armature, vertex groups).
+
+Known gaps vs the FBX: our arms are exactly horizontal (the FBX's slope slightly down); shoulder
+boards and arm pads are bulkier and sit higher (the pad must clear the sleeve envelope); the collar
+fall is a more even band than the FBX's flatter stepped fold; coat/knee crumples are softer than the
+FBX's hard facets; hair is spikier; front opening apex at z ~1.01 (FBX ~1.09); hips ~1 cm wider
+(trouser clearance); textures not applied (the FBX's texture files were not embedded).
