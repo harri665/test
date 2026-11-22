@@ -31,6 +31,8 @@ Z_TOP = 1.240                       # DETAIL_PASS v2 seam: skirt panels start he
 BELT_LO = C["belt_z"][0]
 BELT_CLEAR = 0.036                  # DETAIL_PASS v2 seam: inside the belt zone nothing beyond bare + this
 Z_ROW1 = BELT_LO + 0.005            # first edge loop just under the belt
+BELT_ROWS = (Z_TOP, 1.212, Z_ROW1, BELT_LO - 0.015)   # dense loops through the belt zone for lifted layers
+LIFT_RAMP = (BELT_LO - 0.015, BELT_LO - 0.040)        # lifted layers stay flat until just below the belt
 Z_HEM = C["skirt_hem_z"]
 Z_TIP = C["skirt_tip_z"]
 HEM_RX, HEM_RY, HEM_RYB = C["skirt_hem_rx"], C["skirt_hem_ry"], C["skirt_hem_ry_back"]
@@ -96,10 +98,11 @@ TROUSER_ENV = [(1.20, 0.119, -0.105, 0.105), (1.15, 0.131, -0.109, 0.113), (1.10
 U_CLEAR, COAT_OVER_UNDER, B_GAP = 0.008, 0.010, 0.024   # B_GAP: room for layer B at the sides
 
 NR_FRONT, NC_FRONT = 27, 7
+NR_FRONT_OVER = 29
 NR_BACK, NC_BACK = 28, 7
-NR_A, NC_A_FRONT, NC_A_BACK = 25, 9, 4
+NR_A, NC_A_FRONT, NC_A_BACK = 27, 9, 4
 NR_B, NC_B_FRONT, NC_B_BACK = 12, 9, 4
-NR_TIER, NC_TIER = 14, 9
+NR_TIER, NC_TIER = 16, 9
 NR_UNDER = 14
 
 
@@ -125,7 +128,7 @@ _TOP_B = _bare(Z_TOP)
 
 
 def _a_lift(z, flare=True):
-    return (A_LIFT[0] + (A_LIFT[1] - A_LIFT[0]) * _sstep(BELT_LO + 0.003, BELT_LO - 0.020, z)
+    return (A_LIFT[0] + (A_LIFT[1] - A_LIFT[0]) * _sstep(LIFT_RAMP[0], LIFT_RAMP[1], z)
             + (A_LIFT[2] * _sstep(1.0, 0.72, z) if flare else 0.0))
 
 
@@ -309,9 +312,13 @@ def _angle_for_x(x, z, front, lift=0.0):
 class Panel:
     """A cloth panel = grid of (angle, z) parameters on the shared surface at a layer lift."""
 
-    def __init__(self, edge0, edge1, hem, us, nr, lift, z_top=Z_TOP, z1=Z_ROW1):
+    def __init__(self, edge0, edge1, hem, us, nr, lift, z_top=Z_TOP, z1=Z_ROW1, top_rows=None):
         self.edge0, self.edge1, self.hem, self.us, self.nr = edge0, edge1, hem, us, nr
         self.lift, self.z_top, self.z1 = lift, z_top, z1
+        tr = list(top_rows) if top_rows else ([z_top] if z1 is not None else [])
+        if z1 is not None and not top_rows:
+            tr.append(z1)
+        self.n_top = len(tr)
         self.Q = []
         for k in range(nr + 1):
             row = []
@@ -319,10 +326,11 @@ class Panel:
                 zh = hem(u)
                 if z1 is None:
                     z = z_top + (zh - z_top) * k / nr
-                elif k == 0:
-                    z = z_top
+                elif k < len(tr) - 1:
+                    z = tr[k]
                 else:
-                    z = z1 + (zh - z1) * (k - 1) / (nr - 1)
+                    L = len(tr) - 1
+                    z = tr[-1] + (zh - tr[-1]) * (k - L) / (nr - L)
                 row.append((edge0(z) + (edge1(z) - edge0(z)) * u, z))
             self.Q.append(row)
 
@@ -396,7 +404,7 @@ def _trim(name, panel, path):
             da, dz = (g22 * b1 - g12 * b2) / det, (g11 * b2 - g12 * b1) / det
             a0, z0 = Q[i]
             ring = []
-            fz = 0.35 + 0.65 * _sstep(BELT_LO + 0.005, BELT_LO - 0.030, z0)   # thin under the belt
+            fz = 0.35 + 0.65 * _sstep(LIFT_RAMP[0], LIFT_RAMP[1] - 0.005, z0)   # thin in / just under the belt
             for s, h in T_PROFILE:
                 s = min(s, lim)
                 q, _, _, nq = panel.frame(a0 + da * s, z0 + dz * s)
@@ -433,7 +441,7 @@ def _back_out_x(z, x=BACK_OUT_X, frac=0.8):
 def _lap_lift_z(z):
     """Lift of the overlapping (wearer's right) front panel near the centre: small in the belt
     zone, full on the buttoned overlap, gone once the panels have parted."""
-    return ((0.002 + (LAP_LIFT - 0.002) * _sstep(BELT_LO + 0.003, BELT_LO - 0.020, z))
+    return ((0.002 + (LAP_LIFT - 0.002) * _sstep(LIFT_RAMP[0], LIFT_RAMP[1], z))
             * (1.0 - _sstep(LAP_CUT[1] + 0.005, LAP_CUT[1] - 0.045, z)))
 
 
@@ -458,7 +466,8 @@ def front_panel(over):
         e0 = lambda z: _angle_for_x(_smax(UNDER_EDGE_X, _front_edge_x(z), 0.003), z, True)  # noqa: E731
     return Panel(e0, lambda z: _angle_for_x(_front_out_x(z) + FRONT_UNDER_A, z, True),
                  lambda u: Z_TIP + (FRONT_CORNER[1] - Z_TIP) * u,
-                 [i / NC_FRONT for i in range(NC_FRONT + 1)], NR_FRONT, lift)
+                 [i / NC_FRONT for i in range(NC_FRONT + 1)], NR_FRONT_OVER if over else NR_FRONT, lift,
+                 top_rows=BELT_ROWS if over else None)
 
 
 def back_panel():
@@ -489,11 +498,11 @@ def _a_edges():
 def side_a():
     e0, e1 = _a_edges()
     ut, hem = _side_hem(SIDE_A, e0, e1)
-    return Panel(e0, e1, hem, _cols(NC_A_FRONT, ut, NC_A_BACK), NR_A, lambda a, z: _a_lift(z))
+    return Panel(e0, e1, hem, _cols(NC_A_FRONT, ut, NC_A_BACK), NR_A, lambda a, z: _a_lift(z), top_rows=BELT_ROWS)
 
 
 def _tier_lift(z):
-    return _a_lift(z) + TIER_LIFT[0] + (TIER_LIFT[1] - TIER_LIFT[0]) * _sstep(BELT_LO + 0.003, BELT_LO - 0.020, z)
+    return _a_lift(z) + TIER_LIFT[0] + (TIER_LIFT[1] - TIER_LIFT[0]) * _sstep(LIFT_RAMP[0], LIFT_RAMP[1], z)
 
 
 def _tier_edges():
@@ -507,7 +516,8 @@ def hip_tier():
     """Hip-length upper tier: from the side round to beside the back vent, its hem sloping down
     from hip_tier[0] at the front end to a pointed tail at hip_tier[1] at the back."""
     e0, e1, hem = _tier_edges()
-    return Panel(e0, e1, hem, [i / NC_TIER for i in range(NC_TIER + 1)], NR_TIER, lambda a, z: _tier_lift(z))
+    return Panel(e0, e1, hem, [i / NC_TIER for i in range(NC_TIER + 1)], NR_TIER, lambda a, z: _tier_lift(z),
+                 top_rows=BELT_ROWS)
 
 
 def side_b():
@@ -534,8 +544,10 @@ def _path_main(panel, k_outer):
 
 def _path_side(panel, step, k0_front=0, k0_back=0):
     nr, nc = panel.nr, len(panel.us) - 1
-    down = list(range(k0_front, nr, step)) + [nr]
-    up = [k for k in range(nr - 1, k0_back - 1, -1) if (nr - k) % step == 0 or k == k0_back]
+    t = panel.n_top                     # every loop through the belt zone, then every `step`
+    down = sorted(set([k for k in range(k0_front, nr) if k < t or (k - t) % step == 0]))
+    up = [k for k in range(nr - 1, k0_back - 1, -1) if k < t or (nr - k) % step == 0 or k == k0_back]
+    down.append(nr)
     return [(k, 0) for k in down] + [(nr, j) for j in range(1, nc + 1)] + [(k, nc) for k in up]
 
 
