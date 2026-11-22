@@ -67,9 +67,9 @@ CROWN_FRONT_NARROW = 0.07          # FBX top view: crown is egg-shaped, narrower
 CREASE_DEPTH = 0.0105              # FBX: centre crease dips the top (deepest toward the front)
 CREASE_W = 0.024
 PINCH_A = math.radians(40)         # FBX: two deep pinch dents this far either side of the front
-PINCH_Z = (1.831, 1.889)           # ... spanning this height
+PINCH_Z = (1.834, 1.878)           # ... spanning this height
 PINCH_HW = math.radians(25)        # ... and this half width
-PINCH_DEPTH = 0.0210
+PINCH_DEPTH = 0.0170
 
 
 def _crown_r(z):
@@ -466,27 +466,45 @@ def _hat_ring(rfun, zf, n=N_HAT):
     return out
 
 
+_DENT_MAP = [(0.0, 0.0), (0.62, 0.88), (0.999999, 0.985), (1.0, 1.015), (1.38, 1.12), (1.6, 1.6)]
+
+
+def _dent_remap(r):
+    """Radial warp of the crown grid round a pinch dent: the grid vertices near the dent's oval rim
+    are pulled into two tight bands either side of it, so the rim reads as a crisp oval edge loop
+    instead of a stair-step across the 40-around grid."""
+    for (r0, s0), (r1, s1) in zip(_DENT_MAP, _DENT_MAP[1:]):
+        if r <= r1:
+            return s0 + (s1 - s0) * (r - r0) / (r1 - r0)
+    return r
+
+
 def _crown_shape(p):
-    """Fedora deformation of the crown: centre crease along the top and two deep pinch dents."""
+    """Fedora deformation of the crown: two deep oval pinch dents and a centre crease on the top."""
     q = p.copy()
-    a = math.atan2(p.y - HAT_CY, p.x)
-    # centre crease: a front-back trough dipping the top, deepest toward the front
-    top = _smooth(HAT_TOP - 0.030, HAT_TOP - 0.004, p.z)
-    if top > 0:
-        g = math.exp(-(p.x / CREASE_W) ** 2)
-        fb = 1.0 if p.y < HAT_CY else 0.65
-        q.z -= CREASE_DEPTH * fb * g * top
-    # pinches: bowl-shaped dents with a fairly crisp rim
     zc, hz = 0.5 * (PINCH_Z[0] + PINCH_Z[1]), 0.5 * (PINCH_Z[1] - PINCH_Z[0])
-    for ap in (-math.pi / 2 + PINCH_A, -math.pi / 2 - PINCH_A):
-        d = (a - ap + math.pi) % TAU - math.pi
-        r = math.sqrt((d / PINCH_HW) ** 2 + ((p.z - zc) / hz) ** 2)
-        if r < 1.0:
-            w = 1.0 - _smooth(0.42, 1.0, r)        # flat-bottomed bowl, rim ramp > 1 grid step
-            r = V((p.x, p.y - HAT_CY, 0.0))
-            if r.length > 1e-6:
-                q -= r.normalized() * (PINCH_DEPTH * w)
-                q.z += 0.002 * w                           # dent floor tilts up a little
+    if q.z < HAT_TOP - CROWN_ROUND - 0.001:
+        for ap in (-math.pi / 2 + PINCH_A, -math.pi / 2 - PINCH_A):
+            a = math.atan2(q.y - HAT_CY, q.x)
+            d = (a - ap + math.pi) % TAU - math.pi
+            v = (q.z - zc) / hz
+            r = math.hypot(d / PINCH_HW, v)
+            if r >= _DENT_MAP[-1][0] or r < 1e-9:
+                continue
+            r2 = _dent_remap(r)
+            k = r2 / r
+            a2, z2 = ap + d * k, zc + v * k * hz
+            rx, ry = crown_r(z2, a2)
+            q = V((rx * math.cos(a2), HAT_CY + ry * math.sin(a2), z2))
+            if r2 < 1.0:                                  # flat-bottomed bowl
+                w = 0.85 + 0.15 * (1.0 - r2 * r2)
+                q -= V((math.cos(a2), math.sin(a2), 0.0)) * (PINCH_DEPTH * w)
+    # centre crease: a front-back trough dipping the top, deepest toward the front
+    top = _smooth(HAT_TOP - 0.030, HAT_TOP - 0.004, q.z)
+    if top > 0:
+        g = math.exp(-(q.x / CREASE_W) ** 2)
+        fb = 1.0 if q.y < HAT_CY else 0.65
+        q.z -= CREASE_DEPTH * fb * g * top
     return q
 
 
