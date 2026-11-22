@@ -7,6 +7,7 @@ T-POSE, so arm/hand framings only show the FBX.
     python3 tools/fbx_compare.py --zoom 0,-0.01,1.72,0.15 -o out.png               # head, solid
     python3 tools/fbx_compare.py --zoom 0.14,-0.03,0.13,0.15 --wire -o feet.png    # boot, wireframe
     python3 tools/fbx_compare.py --zoom ... --parts legs --fbx-objects Legs -o x.png
+    python3 tools/fbx_compare.py --pose tpose -o full_tpose.png                  # ours T-posed, full body
     python3 tools/fbx_compare.py --only-fbx --zoom 0.45,0,1.47,0.17 --views FRONT,BACK -o arm.png
 
 Runs each side in its own Blender process (bpy can only be initialised once per process).
@@ -46,7 +47,7 @@ def render_fbx(out, zoom, views, wire, objects):
                          samples=12, views=views, wire=wire)
 
 
-def render_ours(out, zoom, views, wire, parts):
+def render_ours(out, zoom, views, wire, parts, pose=None):
     sys.path.insert(0, ROOT)
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import preview
@@ -54,6 +55,9 @@ def render_ours(out, zoom, views, wire, parts):
     from infantry.parts import PARTS
     lib.reset_scene()
     objs, _ = preview.build_parts(parts or PARTS)
+    if pose:
+        from infantry import pose as posing
+        posing.apply_pose(objs, pose)
     preview.render_views(objs, out, full=zoom is None, zoom=zoom, res=(600, 600) if zoom else (700, 1000),
                          samples=12, views=views, wire=wire)
 
@@ -66,6 +70,7 @@ def main():
     ap.add_argument("--parts", default="", help="comma list of our part modules (default all)")
     ap.add_argument("--fbx-objects", default="", help="comma list of FBX object names (default all)")
     ap.add_argument("--only-fbx", action="store_true")
+    ap.add_argument("--pose", default="", help="pose OUR model first (e.g. tpose) to match the FBX's T-pose")
     ap.add_argument("--_side", default=None, help=argparse.SUPPRESS)
     ap.add_argument("--_out", default=None, help=argparse.SUPPRESS)
     ap.add_argument("-o", "--out", default=os.path.join(ROOT, "renders", "preview_fbx_compare.png"))
@@ -75,12 +80,12 @@ def main():
     if a._side == "fbx":
         return render_fbx(a._out, zoom, views, a.wire, [x for x in a.fbx_objects.split(",") if x])
     if a._side == "ours":
-        return render_ours(a._out, zoom, views, a.wire, [x for x in a.parts.split(",") if x])
+        return render_ours(a._out, zoom, views, a.wire, [x for x in a.parts.split(",") if x], a.pose or None)
     tmp = tempfile.mkdtemp(prefix="fbxcmp_")
     sides = ["fbx"] if a.only_fbx else ["fbx", "ours"]
     for side in sides:
         cmd = [sys.executable, os.path.abspath(__file__), "--_side", side, "--_out", os.path.join(tmp, side + ".png"),
-               "--views", a.views, "--parts", a.parts, "--fbx-objects", a.fbx_objects]
+               "--views", a.views, "--parts", a.parts, "--fbx-objects", a.fbx_objects, "--pose", a.pose]
         if a.zoom:
             cmd += ["--zoom", a.zoom]
         if a.wire:
