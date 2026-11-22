@@ -18,7 +18,7 @@ phi = angle round the forearm, 0 = outer side (+X), 90 deg = front (-Y), 270 = b
 import math
 
 import bpy  # noqa: F401
-from mathutils import Vector as V
+from mathutils import Matrix, Vector as V
 
 from infantry import lib, spec
 from infantry.parts import arms as A
@@ -264,7 +264,6 @@ def rivet_deco(name, loc, normal, up):
     u = V(up)
     u = (u - nz * u.dot(nz)).normalized()
     xax = u.cross(nz).normalized()
-    from mathutils import Matrix
     ob.data.transform(Matrix.Translation(V(loc)) @ Matrix((xax, u, nz)).transposed().to_4x4())
     ob.data.update()
     return lib.finalize(ob, sharp_angle=40)
@@ -284,10 +283,10 @@ def build():
     body = build_body()
     stitches = build_stitches()
     band = build_band()
-    # stitches are thin cloth details: weld them into the objects they sit on (no shared verts)
+    # stitch lines are separate thin shells grouped into the objects they sit on (not welded)
     body = lib.join([body, stitches[0]], "Cuff_L", topo="main")
     band = lib.join([band, stitches[1]], "Cuff_band_L", topo="main")
     rivets = build_rivets()
-    left = [lib.finalize(body, sharp_angle=55), lib.finalize(band, sharp_angle=55), rivets]
+    left = [lib.finalize(body, sharp_angle=66), lib.finalize(band, sharp_angle=55), rivets]
     right = [lib.mirror_copy(o) for o in left]
     return left + right

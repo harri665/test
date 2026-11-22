@@ -227,8 +227,8 @@ FOLD_LOW_DEG = 140.0                      # folds sag lowest here (front-inner: 
 # sleeve_front_*.png: between the shoulder armour and the cuff only two big folds: the big one half way
 # down the visible sleeve (just above the elbow), the second ~3/4 of the way, then a short clean
 # stretch into the cuff; above them the upper arm is a clean straight column.
-FOLDS = [Fold(0.226, 0.0140, 0.012, 0.030, 0.0070, 0.0130),      # the big elbow fold
-         Fold(0.268, 0.0115, 0.010, 0.019, 0.0060, 0.0120)]      # second fold, between elbow and cuff
+FOLDS = [Fold(0.234, 0.0140, 0.012, 0.030, 0.0070, 0.0130),      # the big elbow fold
+         Fold(0.274, 0.0115, 0.010, 0.019, 0.0060, 0.0120)]      # second fold, between elbow and cuff
 ROW_GAP = 0.016                           # max row spacing on the clean stretches between folds
 
 

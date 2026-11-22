@@ -175,13 +175,13 @@ def _add_ring(verts, pts):
 _HEAD_KEYS = [
     (1.590, 0.0560, 0.0580, 0.0560),
     (1.620, 0.0585, 0.0660, 0.0590),
-    (1.655, 0.0620, 0.0755, 0.0630),   # lowest face loop
-    (1.680, 0.0665, 0.0800, 0.0695),
-    (1.705, 0.0690, 0.0825, 0.0760),   # compare row f=0.10
-    (1.730, 0.0705, 0.0835, 0.0800),   # compare SIDE: the skull bulges out behind just under the brim
-    (1.760, 0.0715, 0.0830, 0.0815),   # brow, at the hat's sweatband
-    (1.790, 0.0700, 0.0790, 0.0790),   # cap ring (inside the crown)
-    (1.815, 0.0640, 0.0720, 0.0720),
+    (1.655, 0.0620, 0.0755, 0.0640),   # lowest face loop
+    (1.680, 0.0665, 0.0800, 0.0705),
+    (1.705, 0.0690, 0.0825, 0.0765),   # compare row f=0.10
+    (1.730, 0.0705, 0.0835, 0.0825),   # side_head: the skull bulges out behind just under the brim
+    (1.760, 0.0715, 0.0830, 0.0845),   # brow, at the hat's sweatband
+    (1.790, 0.0700, 0.0790, 0.0815),   # cap ring (inside the crown)
+    (1.815, 0.0640, 0.0720, 0.0740),
 ]
 _HEAD_POW = 2.05                 # back half: plain round skull
 _FACE_POW = 2.0                  # front half: elliptical -> smooth egg, no cheek corners
@@ -499,8 +499,11 @@ def _col_th(j, z):
     j = abs(j)
     if j <= 2:
         return _th_of_x(sg * _slat_x(z) * j / 2.0, z)
-    t0 = _th_of_x(_slat_x(z), z)
-    return sg * (t0 + (_edge_th(z) - t0) * (j - 2) / (MASK_NH - 2))
+    t0, t1 = _th_of_x(_slat_x(z), z), _edge_th(z)
+    f = (j - 2) / (MASK_NH - 2)
+    x0, x1 = _slat_x(z), mask_pt(t1, z).x
+    tx = _th_of_x(x0 + (x1 - x0) * f, z)           # even in front view ...
+    return sg * (0.5 * tx + 0.5 * (t0 + (t1 - t0) * f))   # ... blended with even on the surface
 
 
 def _v_edge_z(x):
