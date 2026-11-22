@@ -77,11 +77,11 @@ Z_FACE0 = 1.655                    # lowest horizontal face loop; below it the r
 Z_NECK_TOP = 1.600                 # highest horizontal neck loop
 Z_NECK_END = 1.53                  # neck runs down to here inside the collar (coat neck hem meets it)
 TURTLE = 0.006                     # smooth turtleneck over the neck (round-3 review: no ribbing)
-TURTLE_FOLD = 0.0015               # amplitude of its two soft folds
+TURTLE_FOLD = 0.0015               # amplitude of its one soft fold
 NECK_FLARE = 0.012                 # bottom ring flares out to meet the coat's neck opening
 NECK_TOP_SHIFT = -0.011            # upper neck sits forward under the skull ...
 NECK_TOP_SLIM = (0.006, 0.008)     # ... and slimmer (x, y): slim neck, nape in line with the skull
-NECK_LEAN = 0.45                   # throat leans forward into the chin (no S-shaped hook)
+NECK_LEAN = 0.70                   # throat leans forward into the chin (no S-shaped hook)
 N_TRANS = 5                        # rows from the neck top loop to the first face loop
 
 # ------------------------------------------------------------------ mask (front_head / side_head)
@@ -206,7 +206,7 @@ def _neck_ring(z, off, tilt=0.0, n=N_HEAD, wobble=0.0, seed=0.0):
     """Turtleneck loop: the spec's neck-top section (kept all the way down into the collar), moved a
     little forward and slimmed front-back toward the top so the nape lines up with the skull."""
     cy, rx, ry = spec.torso_section(spec.TORSO[-1][0])
-    k = _smooth(1.536, 1.578, z)
+    k = _smooth(1.536, Z_NECK_TOP, z)
     cy += NECK_TOP_SHIFT * k
     rx -= NECK_TOP_SLIM[0] * k
     ry -= NECK_TOP_SLIM[1] * k
@@ -230,10 +230,10 @@ def build_head():
     # --- turtleneck: flared hem ring at Z_NECK_END, two soft folds, up to the neck top loop
     zs = [Z_NECK_END, 1.542, 1.557, 1.572, 1.587, Z_NECK_TOP]
     for k, z in enumerate(zs):
-        off = HOOD + TURTLE + (TURTLE_FOLD if k in (2, 4) else 0.0)
+        off = HOOD + TURTLE + (TURTLE_FOLD if k == 3 else 0.0)
         off += NECK_FLARE if k == 0 else (NECK_FLARE * 0.35 if k == 1 else 0.0)
-        sag = 0.004 * (1.0 - k / (len(zs) - 1))       # folds dip slightly at the front
-        rings.append(_neck_ring(z, off, tilt=sag, wobble=0.001 if k in (2, 4) else 0.0, seed=k * 0.37))
+        sag = 0.004 * (1.0 - k / (len(zs) - 1))       # the soft fold dips slightly at the front
+        rings.append(_neck_ring(z, off, tilt=sag, wobble=0.001 if k == 3 else 0.0, seed=k * 0.37))
     # --- neck -> face: per column a Hermite curve leaving the neck vertically and entering the
     #     face loop along the face surface (rounded chin in front, straight nape behind)
     top = rings[-1]
