@@ -51,7 +51,7 @@ BEV = 3.2                   # corner chamfer half angle (deg) -> 2 columns per c
 NB = 2 * NF
 
 # collar ring at the elbow end (the sleeve ends inside it)
-TOP_X0, TOP_TILT, TOP_HI = 0.0045, 0.0060, 120.0    # top edge x = X0 - TILT*cos(phi - HI): highest on the
+TOP_X0, TOP_TILT, TOP_HI = 0.0035, 0.0045, 120.0    # top edge x = X0 - TILT*cos(phi - HI): highest on the
 #                                                     thumb side (FBX), lowest at the back-outer side
 X_RB = 0.050                # ring bottom edge
 A_RI = 0.0640               # ring inner apothem (sleeve end: r <= 0.0604)
@@ -88,10 +88,7 @@ P_NF = 7                    # field rows
 
 
 def keyf(t, keys):
-    return A.keyf(t, keys, smooth=True) if hasattr(A, "keyf") else _keyf(t, keys)
-
-
-def _keyf(t, keys):
+    """Smoothstep interpolation through (t, value) keys."""
     if t <= keys[0][0]:
         return keys[0][1]
     for (t0, v0), (t1, v1) in zip(keys, keys[1:]):
@@ -262,9 +259,8 @@ def build_plate():
     def cols_at(x):
         wr = math.radians(p_halfw(x)) * p_field(x, 0.9)              # half width in metres
         bw = P_BW / wr
-        one = [(1.0, 0), (1.0 - 0.0006 / wr, 1), (1.0 - 0.0017 / wr, 2), (1.0 - bw, 3),
+        return [(1.0, 0), (1.0 - 0.0006 / wr, 1), (1.0 - 0.0017 / wr, 2), (1.0 - bw, 3),
                (1.0 - bw - 0.0009 / wr, 4), (1.0 - bw - 0.0026 / wr, 5), (0.50, 5)]
-        return one
 
     v_tip = SP_TIP
 
@@ -282,8 +278,6 @@ def build_plate():
         side = cols_at(x_mid)
         k = i - 5
         sw, sh = spine(min(max(k, 0), P_NF - 1)) if 5 <= i < NR - 5 else (1.0, 0.0)
-        if i < 5:
-            sw, sh = spine(0)
         uw = SP_W / (math.radians(p_halfw(x_mid)) * p_field(x_mid, 0.0))
         spc = [(uw * sw, 5, 0.0), (uw * sw * 0.30, 5, 0.88), (0.0, 5, 1.0)]
         cl = [(-u, l, 0.0) for u, l in side] + [(-u, l, s) for u, l, s in spc] + \
@@ -305,7 +299,7 @@ def build_plate():
                     r = edge + P_HB - 0.0010
                 else:
                     r = edge
-                    if s and 5 <= i < NR - 5 or (s and i < 5):
+                    if s:
                         r += sh * s
             row.append(pt(x, phi, r))
         grid.append(row)
