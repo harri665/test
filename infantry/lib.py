@@ -543,3 +543,74 @@ def emblem_gothic(name, height=0.20, thickness=0.004, loc=(0, 0, 0), normal=(0, 
     ob.data.transform(Matrix.Translation(V(loc)) @ Matrix((x, u, nrm)).transposed().to_4x4())
     ob.data.update()
     return finalize(ob, sharp_angle=25)
+
+
+# ------------------------------------------------------------------ cloth wrinkles (round 4)
+def _seg_dist(p, a, b, period=None):
+    """Distance from p to segment ab in a 2D (s, l) metric space; s may wrap with `period`.
+    -> (distance, t along the segment)."""
+    px, py = p
+    best = (1e9, 0.0)
+    shifts = (0.0,) if not period else (-period, 0.0, period)
+    for sh in shifts:
+        ax, ay = a[0] + sh, a[1]
+        bx, by = b[0] + sh, b[1]
+        dx, dy = bx - ax, by - ay
+        L2 = dx * dx + dy * dy
+        t = 0.0 if L2 < 1e-12 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L2))
+        d = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+        if d < best[0]:
+            best = (d, t)
+    return best
+
+
+def fold_ridges(s, l, ridges, period=None):
+    """Cloth-wrinkle displacement (metres, along the surface normal) at surface point (s, l).
+
+    Work in METRES on the unrolled surface: s = arc length around a tube (wraps with `period` =
+    circumference) or across a panel, l = length along it.  Each ridge is a dict:
+        pts    poly line [(s, l), ...] the fold's crest follows
+        amp    crest height (+) or valley depth (-), metres (folds: 0.004-0.012)
+        width  half width of the fold, metres (>= ~1.2x the local edge length, or it aliases)
+        sharp  0 = soft round fold, 1 = sharp pinched crest (cloth folds read best ~0.5-0.7)
+    Amplitude tapers to 0 at both ends of the poly line, so folds fade out instead of stopping.
+    Typical recipes (see docs/DETAIL_PASS.md round 4): compression folds = short zig-zag
+    ridges stacked around the inside of a bend; drape folds = long ridges converging on a pinch
+    point (a gather, a cuff, a strap); sag folds = shallow U ridges hanging between two pinches.
+    Valleys between crests come for free if neighbouring crests are about 2x width apart; add
+    negative-amp ridges for deeper creases."""
+    total = 0.0
+    for r in ridges:
+        pts = r["pts"]
+        amp, w, sharp = r["amp"], r["width"], r.get("sharp", 0.5)
+        # cumulative length for an end taper
+        seg_len = [math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) for i in range(len(pts) - 1)]
+        Ltot = sum(seg_len) or 1e-9
+        best_d, best_pos, acc = 1e9, 0.0, 0.0
+        for i in range(len(pts) - 1):
+            d, t = _seg_dist((s, l), pts[i], pts[i + 1], period)
+            if d < best_d:
+                best_d, best_pos = d, (acc + t * seg_len[i]) / Ltot
+            acc += seg_len[i]
+        x = best_d / w
+        if x >= 2.0:
+            continue
+        taper = math.sin(math.pi * min(max(best_pos, 0.0), 1.0)) ** 0.6
+        soft = math.exp(-2.2 * x * x)
+        crisp = max(0.0, 1.0 - x) ** 2
+        total += amp * taper * ((1 - sharp) * soft + sharp * crisp)
+    return total
+
+
+def zigzag_ridges(s0, s1, l0, l1, count, amp=0.007, width=0.012, sharp=0.6, seed=0.0):
+    """Compression folds for the inside of a bend (elbow pit, back of knee, bunching above a cuff):
+    `count` short diagonal crests stacked between l0 and l1, alternating direction like a zig-zag,
+    spanning s0..s1 across.  Returns ridges for fold_ridges."""
+    out = []
+    for i in range(count):
+        l = l0 + (l1 - l0) * (i + 0.5) / count
+        tilt = (l1 - l0) / count * (0.45 if i % 2 else -0.45)
+        j = 0.15 * math.sin(7.3 * i + seed) * (s1 - s0)
+        out.append(dict(pts=[(s0 + j, l - tilt), ((s0 + s1) / 2 + j, l + tilt * 0.3), (s1 + j, l + tilt)],
+                        amp=amp * (0.75 + 0.25 * math.sin(3.1 * i + seed)), width=width, sharp=sharp))
+    return out
