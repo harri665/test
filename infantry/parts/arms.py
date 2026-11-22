@@ -1,14 +1,14 @@
-"""Arms (round 2): coat sleeves from the armhole seam, flared gauntlet bracers, gloved hands.
+"""Arms (round 4): coat sleeves from the armhole seam with stylised folds, gloved hands.
+The turned-back forearm cuff moved to parts/cuffs.py, which imports this module (build_bracer,
+bracer_pt, bracer_R, BRACER_*, LB, WRIST, ArmPath ...) read-only; build() no longer emits it.
 
 Everything is built for the LEFT (+X) arm and mirrored with lib.mirror_copy.
 
 Objects per arm
-    Sleeve_upper_L   main     armhole seam ring -> elbow, with 3 soft fold rolls (16 around)
-    Sleeve_seam_L    main     lengthwise sleeve seam (piping) on the outer-front of the sleeve
-    Sleeve_elbow_L   support  3 tight loops at the elbow
-    Sleeve_lower_L   main     elbow -> a little way inside the bracer (rest is hidden)
-    Cuff_L           main     flared fabric turn-back cuff over the forearm (hem on top, thick fold at the wrist)
-    Cuff_rivets_L    rigid    2 x 2 dome rivets on its front-outer face
+    Sleeve_upper_L   main     armhole seam ring (16) -> 16/32 transition band -> 32 around, big elbow fold
+    Sleeve_seam_L    main     lengthwise sleeve seam (piping) on the outer-front, following the folds
+    Sleeve_elbow_L   support  3 tight loops at the elbow (crest / tuck / crease of the second fold)
+    Sleeve_lower_L   main     elbow -> ~3 cm inside the cuff's top edge (rest is hidden)
     Glove_cuff_L     main     short flared glove cuff coming out of the bracer
     Wrist_L          support  3 tight loops at the wrist
     Hand_L           main     palm + 4 fingers + thumb, one welded all-quad mesh
@@ -292,7 +292,8 @@ def clamp_axis(p):
 def build_sleeve(path):
     """Sleeve from the armhole seam to inside the cuff.  16 around at the seam (welded to the coat by
     position), a 2-row all-quad 16 -> 32 transition band just below it (every other quad splits
-    one-into-three: valence-3/5 poles, no triangles), then 32 around with ~1 cm rows through the folds."""
+    one-into-three: valence-3/5 poles, no triangles), then 32 around: tilted rings whose spacing
+    tightens at each fold (see Fold.rows) and stays even (<= ROW_GAP) between folds."""
     # --- armhole seam in cylinder coordinates around the upper arm axis (continuous index u in 0..NS)
     _, _, e1, e2 = path.at(0.0)
     up_ = V((0.34, 0.0, 0.94)).normalized()
