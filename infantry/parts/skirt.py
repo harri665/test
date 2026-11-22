@@ -381,8 +381,8 @@ def _trim(name, panel, path):
     for piece, (i0, i1) in enumerate(zip(cuts, cuts[1:])):
         rings = []
         for i in range(i0, i1 + 1):
-            lim = min((run[i] - run[i0]) * half[i0] + 0.003 if i0 in half else 9.0,
-                      (run[i1] - run[i]) * half[i1] + 0.003 if i1 in half else 9.0)
+            lim = min((run[i] - run[i0]) * half[i0] + 0.006 if i0 in half else 9.0,
+                      (run[i1] - run[i]) * half[i1] + 0.006 if i1 in half else 9.0)
             p, pa, pz, n = F[i]
             ws = []
             for j0, j1 in ((i - 1, i), (i, i + 1)):
@@ -617,13 +617,13 @@ def _emblem_local(name, kind, s, out):
     th = EMB_TH
     pieces = []
     if kind == "front":                 # concave 4-point star + 2 crescent hooks under it
-        tips = [(0, 1.25 * s), (0.95 * s, 0), (0, -1.15 * s), (-0.95 * s, 0)]
-        k = 0.17 * s
+        tips = [(0, 1.2 * s), (1.0 * s, 0), (0, -1.15 * s), (-1.0 * s, 0)]
+        k = 0.27 * s
         notches = [(k, k), (k, -k), (-k, -k), (-k, k)]
         pieces.append(_relief_star(name + "_star", tips, notches, th))
         for sx in (-1, 1):
-            pieces.append(_relief_arc(name + "_hook", (sx * 0.52 * s, -0.55 * s), 0.36 * s,
-                                      90 + sx * 100, 90 + sx * 230, 0.02 * s, 0.10 * s, th * 0.85))
+            pieces.append(_relief_arc(name + "_hook", (sx * 0.50 * s, -0.62 * s), 0.44 * s,
+                                      90 + sx * 95, 90 + sx * 245, 0.02 * s, 0.15 * s, th * 0.85))
     elif kind == "back":                # half star (up / outward / down) + "C" crescent on the vent side
         tips = [(0, 1.35 * s), (out * 1.0 * s, 0), (0, -1.5 * s), (-out * 0.12 * s, 0)]
         k = 0.18 * s

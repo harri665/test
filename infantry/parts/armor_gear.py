@@ -51,8 +51,8 @@ GD_CLR = 0.010           # inner surface stays this far outside the sleeve
 # +-30 deg) and <= +0.020 front / back; this stays >= all samples.  Front / back it opens out
 # further (+0.035) so the shell is ~20 % deeper front-to-back than the arm (ref side).
 GD_ENV = (0.005, 0.030, RAD(90), 1.6)           # base, extra, angle where it saturates, exponent
-GD_T = 0.0050
-GD_TRIM = (0.011, 0.0022)
+GD_T = 0.0045
+GD_TRIM = (0.011, 0.0020)
 GD_PHI = (RAD(-108), RAD(122))  # front edge .. back edge, 0 = straight out from the arm (ref side:
                                 # the shell sits a little behind the arm centre)
 GD_TOP = (1.590, 1.455)  # arched top edge: height straight out (where the strap clamps it lower) /
@@ -496,13 +496,13 @@ def _guard_P(u, v):
     return _gd_point(_lerp(s0, s1, u), phi)
 
 
-def _guard_rim(gsurf, u, name):
+def _guard_rim(gsurf, u, name, thick=0.0045, width=0.013):
     pts, nrm = [], []
     for k in range(17):
         p, n = gsurf(u, 0.012 + 0.976 * k / 16)
         pts.append(p)
         nrm.append(n)
-    return lib.strip_along(name, pts, nrm, width=0.013, thickness=0.0045, sink=0.0015,
+    return lib.strip_along(name, pts, nrm, width=width, thickness=thick, sink=0.0015,
                            profile="round", topo="rigid")
 
 
@@ -522,15 +522,17 @@ def _pauldron_left():
                            lu, _GD_LV * 1.1, GD_T, GD_TRIM[0], GD_TRIM[1], keep_under=1)
     parts.append(lib.mesh_object("pauldron_guard", vs, fs, topo="rigid"))
     parts.append(_guard_rim(gsurf, 0.962, "guard_rim_bottom"))
-    parts.append(_guard_rim(gsurf, 0.030, "guard_rim_top"))
+    parts.append(_guard_rim(gsurf, 0.040, "guard_rim_top", thick=0.0045, width=0.018))
     # large gothic cross on the outer face, ~2/3 of the guard's height, bent onto the shell
     vc = 0.5 - (0.5 * (GD_PHI[0] + GD_PHI[1])) / (GD_PHI[1] - GD_PHI[0])   # v where phi = 0 ...
     vc = _clamp(vc + 0.05)                                                 # ... nudged a bit back
     phi_c = _gd_phi(vc)
     s0, s1 = _gd_s_range(phi_c)
-    s_c = _lerp(s0, s1, 0.50)
-    em = lib.emblem_gothic("guard_emblem", height=0.66 * (s1 - s0), thickness=0.0035,
+    s_c = _lerp(s0, s1, 0.54)
+    em = lib.emblem_gothic("guard_emblem", height=0.64 * (s1 - s0), thickness=0.006,
                            normal=(0, 0, 1), up=(0, 1, 0))
+    for v in em.data.vertices:          # bolder, like the ref: wider bars and cross arms
+        v.co.x *= 1.9
 
     def wrap(x, y, z, phi_c=phi_c, s_c=s_c):
         s = s_c - y
