@@ -76,7 +76,7 @@ COL_FOLD_Z = (1.684, 1.674)  # fold line (top of the stand): back / front ends
 COL_STAND_R = (0.099, 0.110) # stand radii (x, y about the neck centre) at the fold
 COL_OPEN_TOP = 46.0          # half-angle (deg from front) of the front opening at the fold line
 COL_ROLL = 0.006             # radius of the soft roll at the fold
-COL_FALL = ((180.0, 1.624, 0.032), (95.0, 1.610, 0.030), (64.0, 1.545, 0.020))  # (deg from front,
+COL_FALL = ((180.0, 1.624, 0.032), (95.0, 1.598, 0.032), (64.0, 1.540, 0.022))  # (deg from front,
                              # fall edge z, flop past the stand) - back, sides, collar end
 COL_END = 54.0               # the fall is cut back between here and the front end (notch line)
 COL_THICK = 0.006
@@ -1009,16 +1009,16 @@ def _armhole_seams(S, index, verts):
 CRUMPLES = [
     # (crest poly line in (s, z), amplitude, half width): tent profile -> flat facets meeting at crisp
     # crests, like the FBX's low-poly crumples.  back: sag folds hanging between the seams above the belt
-    ([(-0.17, 1.302), (-0.08, 1.284), (-0.02, 1.296)], 0.009, 0.034),
-    ([(0.02, 1.294), (0.09, 1.280), (0.17, 1.300)], 0.009, 0.034),
-    ([(-0.12, 1.338), (0.0, 1.322), (0.12, 1.336)], -0.006, 0.030),
+    ([(-0.17, 1.302), (-0.08, 1.284), (-0.02, 1.296)], 0.0153, 0.031),
+    ([(0.02, 1.294), (0.09, 1.280), (0.17, 1.300)], 0.0153, 0.031),
+    ([(-0.12, 1.338), (0.0, 1.322), (0.12, 1.336)], -0.0102, 0.027),
     # sides: diagonal drag folds pulled down to the belt
-    ([(0.20, 1.356), (0.28, 1.282)], 0.009, 0.032),
-    ([(-0.20, 1.350), (-0.28, 1.278)], 0.009, 0.032),
-    ([(0.31, 1.334), (0.35, 1.276)], -0.006, 0.026),
-    ([(-0.31, 1.330), (-0.35, 1.272)], -0.006, 0.026),
+    ([(0.20, 1.356), (0.28, 1.282)], 0.0153, 0.029),
+    ([(-0.20, 1.350), (-0.28, 1.278)], 0.0153, 0.029),
+    ([(0.31, 1.334), (0.35, 1.276)], -0.0102, 0.023),
+    ([(-0.31, 1.330), (-0.35, 1.272)], -0.0102, 0.023),
     # the wearer's right front, beside the wrap flap
-    ([(-0.38, 1.340), (-0.44, 1.278)], 0.007, 0.028),
+    ([(-0.38, 1.340), (-0.44, 1.278)], 0.0119, 0.025),
 ]
 
 
