@@ -562,14 +562,19 @@ def _belt_band():
 
 def _strap_section(th, pts2d, w, T, P=None):
     """4-vertex rings of a strap running through belt-section points pts2d = [(off, z, nx, nz)]
-    (centre line + 2D outward normal), width w along the belt tangent at angle th."""
-    P = P or (lambda off, z: _belt_pt(th, off, z))
-    tang = _ell(spec.torso_section(BELT_ZM), th)[2]
+    (centre line + 2D outward normal), width w around the body at angle th.  The strap's edges
+    follow the curve (angular offsets), so wide straps hug the belt instead of standing proud."""
+    P = P or (lambda t, off, z: _belt_pt(t, off, z))
     rings = []
     for off, z, nx, nz in pts2d:
-        a = P(off - nx * T / 2, z - nz * T / 2)
-        b = P(off + nx * T / 2, z + nz * T / 2)
-        rings.append([a - tang * w / 2, b - tang * w / 2, b + tang * w / 2, a + tang * w / 2])
+        oa, za = off - nx * T / 2, z - nz * T / 2
+        ob, zb = off + nx * T / 2, z + nz * T / 2
+        ring = []
+        for (o_, z_), sgn in (((oa, za), -1), ((ob, zb), -1), ((ob, zb), 1), ((oa, za), 1)):
+            c = P(th, o_, z_)
+            dth = (w / 2) / max(math.hypot(c.x, c.y), 0.05)
+            ring.append(P(th + sgn * dth, o_, z_))
+        rings.append(ring)
     return rings
 
 
@@ -593,7 +598,7 @@ def _keeper(name, th, w=0.016, over=None, hang=0.0, wrap=True):
     thing it has to clear (default: whatever _belt_top finds under it).  hang > 0: carries on down
     the skirt by `hang` (pouch / canister hanger) instead of tucking under the bottom rim;
     wrap=False: ends flush with the belt's bottom edge."""
-    T, g = KEEPER_T, 0.0008
+    T, g = KEEPER_T, 0.0012
     top = _belt_top(th, w) if over is None else over
     rf = top + g + T / 2
     z0, z1 = BELT_Z0, BELT_Z1
@@ -605,8 +610,8 @@ def _keeper(name, th, w=0.016, over=None, hang=0.0, wrap=True):
            (rf, z1 - 0.004, 1, 0), (rf, BELT_ZM, 1, 0), (rf, z0 + 0.004, 1, 0)]
     rings = _strap_section(th, pts, w, T)
     if hang:
-        def P(off, z):
-            return _skirt_pt(th, off, z, 0.12)
+        def P(t, off, z):
+            return _skirt_pt(t, off, z, 0.12)
         rings += _strap_section(th, [(rf, z0 - 0.005, 1, 0)], w, T)    # straight past the belt's edge
         lo = [(0.004 + T / 2, z0 - hang * k, 1, 0) for k in (0.55, 1.0)]
         rings += _strap_section(th, lo, w, T, P)
