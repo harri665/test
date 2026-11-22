@@ -44,7 +44,7 @@ Z_BOTTOM = C["coat_split_z"] + 0.010     # 1.195: coat torso ends under the belt
 ARMPIT_Z = spec.armhole_ring(16)[8].z
 Z_TUBE_TOP = ARMPIT_Z - 0.035            # last planar ring, a little under the armpit
 N_AROUND = 32
-N_TUBE = 10                              # planar rings (~2.3 cm apart)
+N_TUBE = 14                              # planar rings (~1.6 cm apart: room for the waist crumples)
 R_REF = spec.torso_section(spec.TORSO[4][0])[1] + OFF   # pattern space: U = R_REF * azimuth (chest)
 NECK_Z = spec.TORSO[6][0]                # neck base
 
@@ -69,7 +69,7 @@ YOKE_Z = 1.490               # yoke lower edge at the centre back (FBX 1.485, ne
 YOKE_DROP = (0.006, 0.150)   # ... and how far it falls by x = +-0.150
 YOKE_APEX = 0.0              # no point at the centre any more
 BACK_SEAM_X = (0.100, 0.070) # single seam lines: x at the yoke -> x at the belt top (centre panel narrows)
-V_PANEL = ((0.104, 0.188), (0.114, 1.372))   # pointed V panel: top x range under the yoke, tip (x, z)
+V_PANEL = ((0.100, 0.212), (0.118, 1.366))   # pointed V panel: top x range under the yoke, tip (x, z)
 EMBLEM_ARM = 0.044           # small cross: side-arm length (FBX head ~0.11 wide), stem to the belt top
 # collar (FBX: tall, open at the front, the back rolls over and flops out / down)
 COL_FOLD_Z = (1.684, 1.674)  # fold line (top of the stand): back / front ends
@@ -894,6 +894,12 @@ def _front(S, lapel_top_z):
 
 
 # ============================================================================ back
+def _yoke_off(z):
+    """Yoke lift: the 8 mm overlap step over the shoulders (where the shoulder boards sit), a thicker
+    cape edge (FBX) across the back above its hem."""
+    return FLAP_OFF + 0.005 * _smooth01((1.545 - z) / 0.030)
+
+
 def _yoke(index, verts):
     """Back shoulder yoke: the core quads above the yoke row (+ the row over the shoulder seam), subdivided
     once and lifted 8 mm; the underside lies on the coat and is not built."""
@@ -919,7 +925,7 @@ def _yoke(index, verts):
     polys = [tuple(p.vertices) for p in me.polygons]
     bpy.data.objects.remove(tmp)
     bpy.data.meshes.remove(me)
-    outer = [p + n * FLAP_OFF for p, n in zip(co, no)]
+    outer = [p + n * _yoke_off(p.z) for p, n in zip(co, no)]
     inner = [p + n * 0.001 for p, n in zip(co, no)]
     yoke = lib.mesh_object("coat_back_yoke", *_shell(outer, inner, polys, back=False), topo="main")
     # rolled edge along the yoke seam
@@ -930,7 +936,7 @@ def _yoke(index, verts):
     for p in edge:
         hit = S.bvh.find_nearest(p)
         n = hit[1] if hit[1].dot(V((0, 1, 0))) > 0 else -hit[1]
-        path.append(p + n * (FLAP_OFF - 0.0035) - V((0, 0, 0.001)))
+        path.append(p + n * (_yoke_off(p.z) - 0.0035) - V((0, 0, 0.001)))
     roll = lib.lofted("coat_yoke_roll", lib.tube_rings(path, 0.0055, n=6, x_hint=(0, 1, 0)), cap_start=True,
                       cap_end=True, topo="main")
     return [yoke, roll]
@@ -954,6 +960,8 @@ def _back(S):
     for v in em.data.vertices:
         x, hh, z = v.co.x, v.co.y, v.co.z
         wz = top_z - (z_hi - z) if z >= z_keep else bot_z + (z - z_lo) * k
+        if z < z_keep:
+            x *= 1.7                                     # FBX: a broad stem
         p, n = S.point(x, wz, back=True)
         v.co = p + n * (hh + 0.0012)
     lib.finalize(em, sharp_angle=25)
@@ -969,7 +977,7 @@ def _back(S):
             ab, bc, ca = [p for p in reversed(ab)], [p for p in reversed(ca)], [p for p in reversed(bc)]
         uzb = lambda p: S.uz(p.x, p.y, back=True)
         M = _tri_patch(Pattern(), [uzb(p) for p in ab], [uzb(p) for p in bc], [uzb(p) for p in ca]).relax(20)
-        objs.append(_panel(f"coat_back_point_{'L' if side > 0 else 'R'}", S, M, 0.0055, 0.0045, back=True))
+        objs.append(_panel(f"coat_back_point_{'L' if side > 0 else 'R'}", S, M, 0.0085, 0.0065, back=True))
     # single seam lines bounding the narrowing centre-back panel (FBX), continued under the belt
     seams = []
     for side in (1, -1):
@@ -999,17 +1007,36 @@ def _armhole_seams(S, index, verts):
 
 # ============================================================================ crumples (C4)
 CRUMPLES = [
-    # back: a broad sag fold dipping toward the stem, a valley above it, a short one under it
-    dict(pts=[(-0.17, 1.300), (-0.06, 1.284), (0.0, 1.279), (0.06, 1.286), (0.17, 1.303)], amp=0.0104, width=0.020, sharp=0.75),
-    dict(pts=[(-0.13, 1.336), (-0.02, 1.322), (0.11, 1.338)], amp=-0.0072, width=0.016, sharp=0.6),
-    dict(pts=[(0.03, 1.262), (0.14, 1.268)], amp=0.0072, width=0.016, sharp=0.7),
+    # (crest poly line in (s, z), amplitude, half width): tent profile -> flat facets meeting at crisp
+    # crests, like the FBX's low-poly crumples.  back: sag folds hanging between the seams above the belt
+    ([(-0.17, 1.302), (-0.08, 1.284), (-0.02, 1.296)], 0.009, 0.034),
+    ([(0.02, 1.294), (0.09, 1.280), (0.17, 1.300)], 0.009, 0.034),
+    ([(-0.12, 1.338), (0.0, 1.322), (0.12, 1.336)], -0.006, 0.030),
     # sides: diagonal drag folds pulled down to the belt
-    dict(pts=[(0.20, 1.352), (0.27, 1.282)], amp=0.0096, width=0.018, sharp=0.7),
-    dict(pts=[(-0.21, 1.346), (-0.28, 1.280)], amp=0.0096, width=0.018, sharp=0.7),
-    dict(pts=[(0.30, 1.330), (0.34, 1.268)], amp=-0.0064, width=0.016, sharp=0.6),
+    ([(0.20, 1.356), (0.28, 1.282)], 0.009, 0.032),
+    ([(-0.20, 1.350), (-0.28, 1.278)], 0.009, 0.032),
+    ([(0.31, 1.334), (0.35, 1.276)], -0.006, 0.026),
+    ([(-0.31, 1.330), (-0.35, 1.272)], -0.006, 0.026),
     # the wearer's right front, beside the wrap flap
-    dict(pts=[(-0.36, 1.338), (-0.42, 1.272)], amp=0.0080, width=0.016, sharp=0.7),
+    ([(-0.38, 1.340), (-0.44, 1.278)], 0.007, 0.028),
 ]
+
+
+def _crumple_d(s, z):
+    d = 0.0
+    for pts, amp, w in CRUMPLES:
+        best, pos, acc = 9.0, 0.0, 0.0
+        L = [math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:])]
+        for (a, b), l in zip(zip(pts, pts[1:]), L):
+            dd, t = lib._seg_dist((s, z), a, b)
+            if dd < best:
+                best, pos = dd, (acc + t * l) / sum(L)
+            acc += l
+        if best < w:
+            d += amp * (1.0 - best / w) * math.sin(math.pi * min(max(pos, 0.0), 1.0)) ** 0.5
+    # fade to nothing at the zone's ends (the belt zone below stays at coat_offset)
+    zf = _smooth01((z - CRUMPLE_Z[0]) / 0.012) * _smooth01((CRUMPLE_Z[1] - z) / 0.02)
+    return d * zf
 
 
 def _crumple(verts, index):
@@ -1024,7 +1051,7 @@ def _crumple(verts, index):
         cy = spec.torso_section(p.z)[0]
         az = math.atan2(p.y - cy, p.x)
         s = R_REF * (((math.pi / 2 - az) + math.pi) % math.tau - math.pi)     # 0 centre back, + toward +X
-        d = lib.fold_ridges(s, p.z, CRUMPLES)
+        d = _crumple_d(s, p.z)
         if abs(d) < 1e-5:
             continue
         r = V((p.x, p.y - cy, 0.0)).normalized()
@@ -1033,7 +1060,7 @@ def _crumple(verts, index):
     return moved
 
 
-def _sharpen(ob, ids, angle=11.0):
+def _sharpen(ob, ids, angle=9.0):
     """Hard edges inside the crumple zone so the folds read as crisp facets (FBX), not soft bumps."""
     import bmesh
     me = ob.data
@@ -1041,7 +1068,7 @@ def _sharpen(ob, ids, angle=11.0):
     bm.from_mesh(me)
     lim = math.radians(angle)
     for e in bm.edges:
-        if all(v.index in ids for v in e.verts) and len(e.link_faces) == 2 and e.calc_face_angle(0.0) > lim:
+        if any(v.index in ids for v in e.verts) and len(e.link_faces) == 2 and e.calc_face_angle(0.0) > lim:
             e.smooth = False
     bm.to_mesh(me)
     bm.free()

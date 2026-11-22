@@ -1,13 +1,15 @@
 """Rigid hard-surface accessories, round 5 (match the user's FBX game model, docs/FBX_MATCH.md I1 / I7,
 docs/FBX_COMPARISON.md C7, C8, W1-W4).
 
-    shoulder_board_L/R  C7  flat rectangular epaulette board lying on the shoulder, arched gently
-                            front-to-back, its outer end overhanging the upper arm; two stacked plates
-                            (base board + smaller top plate) and a plain strap along its crown; crisp
-                            chamfered edges, no buttons / emblems
+    shoulder_board_L/R  C7  flat rectangular board (~10 cm along the shoulder) arched front-to-back
+                            over the shoulder joint like the FBX's (front / back view: a flat rectangle,
+                            side view: a horseshoe), overhanging the upper arm; two stacked plates
+                            (base board + smaller top plate) and a plain strap over its crown; crisp
+                            chamfered edges, no buttons / emblems.  Pose stage: "epaulette" islands
     pauldron_L/R        C8  plain upper-arm pad: a curved plate over the outside of the upper arm, its
-                            top tucked under the board, its bottom edge a shallow V with a raised,
-                            bevelled lip band that flares out; no emblem, no rivets
+                            peaked top tucked under the board, with a raised, bevelled lip band along
+                            that top edge (small chevron point straight out, like the FBX); plain
+                            bell-flared bottom edge; no emblem, no rivets.  Pose stage: "pauldron"
     belt                W1  thin continuous band z 1.195-1.245 (hides the coat / skirt seam all round),
                             outer face bare + 0.040; two round buttons at the back left / right of centre.
                             At the front it passes under the coat's wrap flap (I2, >= bare + 0.048)
@@ -22,7 +24,7 @@ Layering:
     through the coat's wrap flap, and the tabs sit outside its edges anyway)
     skirt (skirt.outer_radius when importable) -> hanging strap +0.003
     upper sleeve (<= arm radius + 0.022 above z 1.36) -> pad inner surface >= +0.011 outside that
-    coat shoulder -> board underside >= ~0.010 above it
+    coat shoulder / collar / yoke -> board inner surface >= 0.011 from it
 
 Belt angle convention in this file: theta = 0 at FRONT centre (-Y), +90 deg at the wearer's LEFT
 (+X), 180 deg at the back.  skirt.outer_radius uses lib.ring_z angles (0 = +X, 270 = front), so
@@ -81,10 +83,10 @@ BELT_N = 48
 # side tabs: angles along the belt (deg), inner end just outside the coat flap's edge
 TAB_TH_IN = (44.0, 38.0)        # inner tip, wearer's left / right (coat flap edges: +39 / -32 deg)
 TAB_TH_OUT = 100.0             # inner tip .. outer end
-TAB_Z = (1.193, 1.247)
+TAB_Z = (1.189, 1.251)
 TAB_OFF = (BELT_RO + 0.0003, BELT_RO + 0.0040)
 BUCKLE_DTH = 10.0                 # centre of the rectangular loop buckle, deg behind the tip
-BUCKLE_W, BUCKLE_H = 0.026, 0.066 # outer size along the belt / height
+BUCKLE_W, BUCKLE_H = 0.026, 0.074 # outer size along the belt / height
 BUCKLE_BAR, BUCKLE_D = 0.0060, 0.0055
 KEEPER_DTH = 22.0
 KEEPER_W, KEEPER_T = 0.009, 0.0028
@@ -92,10 +94,11 @@ BUTTON_X = 0.090                  # back buttons at x = +-this (FBX back view)
 BUTTON_R, BUTTON_H = 0.0190, 0.0065
 
 # --- W4 hanging strap (from the tab's outer end down the hip)
-ST_TH = (95.0, 104.0)              # angle at the belt .. at the tip (drifts a little backward)
+ST_TH = (95.0, 105.0)              # angle at the belt .. at the tip (drifts a little backward)
 ST_W, ST_T = 0.016, 0.0030
 ST_Z = (1.238, 0.985)             # top (on the tab) .. pointed tip
-ST_CLR = 0.0030                   # over the skirt
+ST_CLR = 0.0030                   # over the skirt ...
+ST_HALF = 0.07                    # ... resting on the outermost cloth within +-this (rad): panel edges step
 
 
 # ============================================================================ small helpers
@@ -541,7 +544,7 @@ def _strap_left():
         z = _lerp(za, zb, t)
         th = RAD(_lerp(ST_TH[0], ST_TH[1], _smooth(0.0, 1.0, t)))
         pb = _belt_pt(th, top_off, z) if z > BELT_Z0 - 0.012 else None
-        ps = _skirt_pt(th, ST_CLR, z)
+        ps = _skirt_pt(th, ST_CLR, z, ST_HALF)
         if pb is not None and z > TAB_Z[0] - 0.002:
             p = pb                                      # on the tab
         elif pb is not None:                            # over the tab's / belt's bottom edge

@@ -67,8 +67,8 @@ CROWN_FRONT_NARROW = 0.07          # FBX top view: crown is egg-shaped, narrower
 CREASE_DEPTH = 0.0105              # FBX: centre crease dips the top (deepest toward the front)
 CREASE_W = 0.024
 PINCH_A = math.radians(40)         # FBX: two deep pinch dents this far either side of the front
-PINCH_Z = (1.834, 1.886)           # ... spanning this height
-PINCH_HW = math.radians(21)        # ... and this half width
+PINCH_Z = (1.831, 1.889)           # ... spanning this height
+PINCH_HW = math.radians(25)        # ... and this half width
 PINCH_DEPTH = 0.0210
 
 
@@ -107,7 +107,7 @@ _HEAD_POW = 2.05
 EAR_ZC = 1.728                     # FBX ear z 1.699..1.764
 EAR_FRONT_Y = -0.0105              # front edge just behind the mask's rear edge / sideburn
 EAR_W, EAR_H = 0.035, 0.062
-EAR_FLARE = math.radians(27)       # back of the ear stands out from the skull (FBX front view)
+EAR_FLARE = math.radians(25)       # back of the ear stands out from the skull (FBX front view)
 EAR_LEAN = math.radians(12)        # top leans back
 N_EAR = 12
 
@@ -480,9 +480,9 @@ def _crown_shape(p):
     zc, hz = 0.5 * (PINCH_Z[0] + PINCH_Z[1]), 0.5 * (PINCH_Z[1] - PINCH_Z[0])
     for ap in (-math.pi / 2 + PINCH_A, -math.pi / 2 - PINCH_A):
         d = (a - ap + math.pi) % TAU - math.pi
-        r2 = (d / PINCH_HW) ** 2 + ((p.z - zc) / hz) ** 2
-        if r2 < 1.0:
-            w = (1.0 - r2) ** 0.35
+        r = math.sqrt((d / PINCH_HW) ** 2 + ((p.z - zc) / hz) ** 2)
+        if r < 1.0:
+            w = 1.0 - _smooth(0.42, 1.0, r)        # flat-bottomed bowl, rim ramp > 1 grid step
             r = V((p.x, p.y - HAT_CY, 0.0))
             if r.length > 1e-6:
                 q -= r.normalized() * (PINCH_DEPTH * w)
@@ -521,7 +521,7 @@ def build_hat():
         faces += _bridge(a, b)
     faces += _coons(idx[-1], verts, rot=5)
     verts = [_crown_shape(v) if v.z > BAND_Z[1] else v for v in verts]
-    return lib.mesh_object("hat", verts, faces, topo="main")
+    return lib.mesh_object("hat", verts, faces, topo="main", sharp_angle=55)
 
 
 def build_band():

@@ -80,7 +80,8 @@ P = dict(
     elbow_w=0.035,         # half width of the elbow blend (across the bisector plane)
     wrist=(-0.004, 0.026), # hand blend along the wrist plane normal, from the wrist pivot
     twist=(0.10, 0.95),    # forearm twist ramp (forearm parameter)
-    twist_share=0.65,      # share of the forearm->hand twist carried by forearm_twist
+    twist_share=0.0,       # share of the forearm->hand twist carried by forearm_twist (0: the cuffs are rigid
+                           #   shells over the forearm, so the whole palm-down twist happens in the wrist blend)
     guard_drop_max=0.020,  # shoulder armour fit (_solve_armour): the guard may sit up to this much lower ...
     guard_slide_min=0.0,   # ... and slides out along the arm at least this much
     guard_gap=0.002,       # clearance kept between the guard and the sleeve / coat

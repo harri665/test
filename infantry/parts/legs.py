@@ -226,8 +226,8 @@ _UNTWIST = {0: 0.55, 1: 0.85}                  # ... and part of the split ring'
 LOWER_ROWS = [(0.492, 0.0730), (0.474, 0.0720), (0.452, 0.0705), (0.430, 0.0690), (0.408, 0.0678),
               (0.388, 0.0668), (0.372, 0.0660)]
 # scrunched hem: (z, radius, crest weight).  Short compressed folds (crest / valley pairs ~1 cm apart).
-BUNCH_ROWS = [(0.361, 0.0660, 0.45), (0.351, 0.0645, -0.25), (0.338, 0.0665, 1.00), (0.326, 0.0645, -0.30),
-              (0.313, 0.0670, 1.00), (0.301, 0.0650, -0.25), (0.291, 0.0665, 0.85), (0.2835, 0.0620, 0.20)]
+BUNCH_ROWS = [(0.361, 0.0655, 0.45), (0.351, 0.0655, -0.30), (0.338, 0.0660, 1.00), (0.326, 0.0660, -0.35),
+              (0.313, 0.0665, 1.00), (0.301, 0.0665, -0.30), (0.291, 0.0665, 0.85), (0.2835, 0.0620, 0.20)]
 BUNCH_AMP = 0.0100
 # tuck under the hem onto the slim lower leg, then down the leg, under the ankle cuff, crumpled above the
 # boot collar and into the boot: (z, offset from the tube surface, crumple weight)
@@ -236,8 +236,8 @@ COLLAR_Z, COLLAR_ARCH = 0.116, 0.016     # boot collar height at the back, rise 
 TUBE_ROWS = [(0.2785, 0.0040, 0.0), (0.2735, 0.0028, 0.0), (0.2670, 0.0022, 0.0), (0.2520, 0.0018, 0.0),
              (0.2330, 0.0016, 0.0), (0.2150, 0.0020, 0.0), (0.2050, 0.0030, 0.0), (0.1995, 0.0004, 0.0),
              (0.1760, -0.0004, 0.0), (0.1525, 0.0004, 0.0),
-             (0.1490, 0.0040, 0.30), (0.1452, 0.0060, 0.90), (0.1418, 0.0060, 0.60), (0.1388, 0.0040, -0.30),
-             (0.1352, 0.0060, 0.80), (0.1316, 0.0060, 1.00), (0.1282, 0.0045, 0.40), (0.1256, 0.0030, -0.30),
+             (0.1490, 0.0040, 0.30), (0.1452, 0.0052, 0.90), (0.1418, 0.0052, 0.60), (0.1388, 0.0052, -0.30),
+             (0.1352, 0.0052, 0.80), (0.1316, 0.0052, 1.00), (0.1282, 0.0050, 0.40), (0.1256, 0.0048, -0.30),
              (0.1224, 0.0040, 0.60), (0.1190, 0.0006, 0.0), (0.1120, 0.0002, 0.0),
              (0.1000, -0.0015, 0.0), (0.0920, -0.0025, 0.0)]
 CRUMPLE_AMP = 0.0085
@@ -252,10 +252,10 @@ def _knee_ridges(side):
 
     def s(deg):
         return R * math.radians(deg)
-    out = lib.zigzag_ridges(s(50), s(130), 0.492, 0.604, 3, amp=0.0065, width=0.012, sharp=0.7, seed=0.4 + sd)
-    out += [dict(pts=[(s(200), 0.606), (s(250), 0.582), (s(305), 0.594)], amp=0.0060, width=0.013, sharp=0.7),
-            dict(pts=[(s(220), 0.524), (s(272), 0.500), (s(330), 0.518)], amp=0.0065, width=0.013, sharp=0.7),
-            dict(pts=[(s(325), 0.570), (s(370), 0.546), (s(410), 0.560)], amp=0.0050, width=0.012, sharp=0.65),
+    out = lib.zigzag_ridges(s(50), s(130), 0.492, 0.604, 3, amp=0.0085, width=0.012, sharp=0.75, seed=0.4 + sd)
+    out += [dict(pts=[(s(200), 0.606), (s(250), 0.582), (s(305), 0.594)], amp=0.0080, width=0.013, sharp=0.75),
+            dict(pts=[(s(220), 0.524), (s(272), 0.500), (s(330), 0.518)], amp=0.0085, width=0.013, sharp=0.75),
+            dict(pts=[(s(325), 0.570), (s(370), 0.546), (s(410), 0.560)], amp=0.0065, width=0.012, sharp=0.7),
             dict(pts=[(s(140), 0.472), (s(185), 0.456), (s(225), 0.466)], amp=0.0040, width=0.012, sharp=0.6),
             # long drape creases down the shin, fading into the hem bunch
             dict(pts=[(s(262 + 20 * sd), 0.480), (s(256 + 20 * sd), 0.420), (s(266 + 20 * sd), 0.365)],
@@ -384,11 +384,11 @@ def _phase(side, k):
 def _bunch_ring(z, r, w, k, side):
     """One row of the scrunched hem: crest weight w (+ crest, - valley), tilted and uneven around the leg."""
     pts = []
-    ph = _phase(side, k)
+    ph = _phase(side, k - (k % 2))          # a valley row follows the crest above it (no all-round grooves)
     for j in range(NL):
         th = TAU * j / NL
         mod = 0.50 + 0.60 * math.cos(th - ph) + 0.25 * math.cos(2 * th + 1.7 * ph) + 0.10 * math.cos(5 * th + ph)
-        amp = BUNCH_AMP * w * (max(mod, 0.05) if w > 0 else 1.0)
+        amp = BUNCH_AMP * w * max(mod, 0.05)
         dz = 0.0060 * math.sin(th + _phase(side, 0)) + 0.0012 * math.sin(3 * th + 2.3 * ph)   # one tilted bunch
         p = trouser_pt(z, r + amp, th, side, folds=False, dz=dz)
         pts.append(V((p.x * side, p.y, p.z)))
@@ -420,7 +420,7 @@ def tube_row(z, d, w, k, side):
         if w:
             ph = _phase(side, 7 + _CRUMPLE_GROUP.get(round(z, 4), 0))    # rows of one fold share a phase
             mod = 0.50 + 0.50 * math.cos(a - ph) + 0.22 * math.cos(2 * a + 1.7 * ph) + 0.08 * math.cos(5 * a + ph)
-            dd += CRUMPLE_AMP * w * (min(max(mod, 0.08), 1.1) if w > 0 else 1.0) * (1.0 - 0.55 * f)
+            dd += CRUMPLE_AMP * w * min(max(mod, 0.08), 1.1) * (1.0 - 0.55 * f)
         if 0.118 < z < 0.152:                                   # whole crumple zone tilts as one
             zz += (0.0028 * math.sin(a + _phase(side, 9)) + 0.0006 * math.sin(3 * a + ph)) * (1.0 - f) \
                 * _sstep((z - 0.118) / 0.008) * _sstep((0.152 - z) / 0.006)
@@ -919,12 +919,12 @@ def build_counter(bvh):
 # ================================================================== STRAPS / CUFF / HARDWARE
 # two wide flat straps over the instep, diagonal (forward on top, sweeping back-down on the outer side to
 # the heel counter's front edge, straight down the inner side to the welt); the rear one lies on top
-STRAP_A = [(-0.061, -0.128, 0.020), (-0.057, -0.123, 0.050), (-0.040, -0.114, 0.080), (-0.012, -0.104, 0.094),
-           (0.018, -0.092, 0.092), (0.042, -0.072, 0.082), (0.055, -0.046, 0.066), (0.057, -0.020, 0.056),
-           (0.054, -0.002, 0.050)]
-STRAP_B = [(-0.057, -0.094, 0.022), (-0.053, -0.090, 0.055), (-0.040, -0.084, 0.088), (-0.014, -0.077, 0.106),
-           (0.016, -0.067, 0.108), (0.040, -0.047, 0.098), (0.054, -0.019, 0.084), (0.056, 0.008, 0.074),
-           (0.052, 0.030, 0.068)]
+STRAP_A = [(-0.061, -0.136, 0.020), (-0.057, -0.131, 0.048), (-0.040, -0.122, 0.076), (-0.012, -0.112, 0.090),
+           (0.018, -0.100, 0.088), (0.042, -0.080, 0.078), (0.055, -0.054, 0.064), (0.057, -0.028, 0.054),
+           (0.054, -0.008, 0.048)]
+STRAP_B = [(-0.057, -0.100, 0.022), (-0.053, -0.096, 0.052), (-0.040, -0.090, 0.082), (-0.014, -0.084, 0.098),
+           (0.016, -0.074, 0.100), (0.040, -0.054, 0.092), (0.054, -0.026, 0.080), (0.056, 0.002, 0.072),
+           (0.052, 0.026, 0.066)]
 
 
 def build_straps(upper, counter, side_rows):
@@ -932,8 +932,10 @@ def build_straps(upper, counter, side_rows):
     sm, hw = MB(), MB()
     bvh = _bvh([upper, counter])
     band(sm, bvh, path_frames(bvh, STRAP_A, subdiv=2), 0.040, 0.0058, bevel=0.0012)
+    na, nfa = len(sm.v), len(sm.f)
     bvh = _bvh([upper, counter, sm])
-    band(sm, bvh, path_frames(bvh, STRAP_B, subdiv=2), 0.046, 0.0062, bevel=0.0012)
+    band(sm, bvh, path_frames(bvh, STRAP_B, subdiv=2), 0.044, 0.0062, bevel=0.0012)
+    _squash_under(sm, range(na), BVHTree.FromPolygons([tuple(p) for p in sm.v], sm.f[nfa:]))
     # wrapped ankle cuff: closed crisp band on the slim lower leg, square buckle on the outer side
     z0, z1 = CUFF_Z
     d_in, d_out, ch = 0.0015, 0.0064, 0.0013
@@ -955,12 +957,31 @@ def build_straps(upper, counter, side_rows):
         prev = cur
     tb = _bvh([tm])
     fr = []
-    for z in (0.197, 0.2025, 0.208, 0.215, 0.224, 0.233, 0.2425, 0.252, 0.262):
+    for z in (0.2004, 0.2040, 0.209, 0.215, 0.224, 0.233, 0.2425, 0.252, 0.262):
         p = tube_pt(z, 0.0, 0.0)
         hit = tb.ray_cast(p + V((0.05, 0.0, 0.0)), V((-1.0, 0.0, 0.0)))
         fr.append((hit[0] if hit[0] is not None else p, V((1.0, 0.0, 0.0))))
     band(sm, tb, fr, 0.022, 0.0026, bevel=0.0007)
     return sm, hw
+
+
+def _inside(bvh, p):
+    """Ray parity test: is p inside the closed mesh in bvh?"""
+    d, q, hits = V((0.31, 0.52, 0.80)).normalized(), p.copy(), 0
+    while True:
+        h = bvh.ray_cast(q + d * 1e-6, d)
+        if h[0] is None:
+            return hits % 2 == 1
+        hits, q = hits + 1, h[0]
+
+
+def _squash_under(mb, ids, top):
+    """Strap edges that end up inside the strap stacked over them are pressed down just under it."""
+    for i in ids:
+        p = mb.v[i]
+        if _inside(top, p):
+            loc = top.find_nearest(p)[0]
+            mb.v[i] = loc + (loc - p).normalized() * 0.0006
 
 
 # ================================================================== build
