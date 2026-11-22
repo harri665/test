@@ -1,23 +1,28 @@
-"""Arms (round 4): coat sleeves from the armhole seam with stylised folds, gloved hands.
-The turned-back forearm cuff moved to parts/cuffs.py, which imports this module (build_bracer,
-bracer_pt, bracer_R, BRACER_*, LB, WRIST, ArmPath ...) read-only; build() no longer emits it.
+"""Arms (round 5, FBX match A1 + A3): puffy coat sleeves with irregular faceted crumples, plain gloves.
+The forearm cuff lives in parts/cuffs.py, which imports this module (WRIST, ArmPath, bracer_pt,
+BRACER_*, LB, D2, LF, E1F, E2F ...) read-only; pose.py replicates the hand frame from the FINGER_* /
+HAND_* constants and Digit.  build() emits sleeves + gloves only.
 
-Everything is built for the LEFT (+X) arm and mirrored with lib.mirror_copy.
+Everything is designed for the LEFT (+X) arm and mirrored with lib.mirror_copy; the right sleeve is
+built with its own random crumples (SEEDS[1]) before mirroring, so the two sleeves differ.
 
 Objects per arm
-    Sleeve_upper_L   main     armhole seam ring (16) -> 16/32 transition band -> 32 around, big elbow fold
-    Sleeve_seam_L    main     lengthwise sleeve seam (piping) on the outer-front, following the folds
-    Sleeve_elbow_L   support  3 tight loops at the elbow (crest / tuck / crease of the second fold)
-    Sleeve_lower_L   main     elbow -> ~3 cm inside the cuff's top edge (rest is hidden)
-    Glove_cuff_L     main     short flared glove cuff coming out of the bracer
+    Sleeve_upper_L   main     armhole seam ring (16, = spec.armhole_ring) -> 16/32 transition band ->
+                              32 around, upper-arm crumples
+    Sleeve_seam_L    main     thin underarm seam (flat piping) following the crumpled surface
+    Sleeve_elbow_L   support  the dense elbow crumples (crease loops + their support loops)
+    Sleeve_lower_L   main     the bunching onto the cuff -> sleeve end at LU + SLEEVE_END, inside the cuff
+    Glove_cuff_L     main     plain glove cuff tube coming out of the forearm cuff
     Wrist_L          support  3 tight loops at the wrist
-    Hand_L           main     palm + 4 fingers + thumb, one welded all-quad mesh
-    Hand_armor_L     rigid    4 small round knuckle rivets + a small star on the back of the hand
+    Hand_L           main     palm + 4 fingers + thumb, one welded all-quad mesh; relaxed, near-straight,
+                              slightly spread fingers with faceted segments (V grooves at the joints)
+    Hand_armor_L     rigid    the stiff, flat-faced glove cuff rim round the wrist (no rivets, no star)
 
 Sleeve "phi" angle around the arm: 0 = outer side (+X), 90 deg = front (-Y), 270 deg = back.
 """
 import bisect
 import math
+import random
 
 import bpy  # noqa: F401
 from mathutils import Quaternion, Vector as V
@@ -46,15 +51,14 @@ LF = (WRIST - S.ELBOW).length           # forearm length
 UPPER_BOW = 0.017          # max inward bow of the upper-arm centre line (zero at shoulder + elbow)
 UPPER_FLAT = 0.90          # lateral (front-view) radius factor of the upper sleeve
 ELBOW_POINT = 0.0028                      # bony elbow bulge at the back
-SEAM_PHI_INDEX = 2                        # lengthwise seam runs along sleeve vertex 2 of 16 (45 deg, outer-front)
-# ---- round 4: real cloth wrinkles (callout_elbow.png, front_arm_*, side_arm)
+SEAM_PHI_INDEX = 8                        # lengthwise seam runs along sleeve vertex 8 of 16 (180 deg: underarm)
+# ---- sleeve layout (the crumples themselves: CREASES below)
 NS2 = 32                                  # sleeve verts around below the 16 -> 32 transition band
 KB = 12                                   # blend rings: tilted armhole seam -> rings square to the arm
 A_END = 0.165                             # ... reaching square rings this far down the upper arm
 AXIS_LIM = 0.0205                         # upper sleeve stays within arm radius + this (< 0.022) above z 1.36
-# front_arm_*, side_arm, side_skirt: a flared FABRIC turn-back cuff over the forearm: thin hem at the
-# top (edge rises toward the outer side), thick rounded fold at the wrist end, 2x2 rivets on the front
-# face, no strap.  The cuff is cloth (topo main); only the rivets are rigid.
+# legacy round-4 forearm cuff constants: still read by build_bracer / bracer_pt (kept for cuffs.py's
+# frame, which mirrors bracer_pt; the cuff itself is built in parts/cuffs.py)
 BRACER_R = (0.078, 0.057)                 # outer radius at the elbow end / wrist end
 BRACER_TH = 0.005                         # double cloth layer (turned back)
 BRACER_TOP_DROP = 0.0                     # 0: hem square to the forearm, so its outer side is already higher
@@ -67,7 +71,8 @@ RIVET_X = (0.20, 0.76)                    # two rows along the cuff (0 elbow end
 HAND_SCALE = 1.15                         # checklist: larger, chunkier glove than round 1
 FINGER_THICK = (1.10, 1.20)               # review: plain THICK gloved fingers (width, depth factors)
 HAND_TURN = 25.0                          # front_arm_*: back of the hand turned toward the front (deg)
-HAND_ALIGN = 0.7                          # how far the curled middle tip is swung onto WRIST->HAND_TIP
+HAND_ALIGN = 0.7                          # how far the middle fingertip is swung onto WRIST->HAND_TIP
+HAND_SHARP = 38.0                         # FBX A3: faceted fingers (8 around -> 45 deg edges shade hard)
 HAND_RISE = 0.012                         # glove emerges right under the bracer rim, tips end at z ~0.785
 
 
@@ -171,13 +176,16 @@ def t_of(s):
     return s / LU if s < LU else 1.0 + (s - LU) / LF
 
 
-BAG = [(0.0, 0.000), (0.55, 0.001), (0.85, 0.0025), (1.0, 0.003), (1.15, 0.002), (1.5, 0.0)]
+# round 5 (FBX A1): the sleeve is PUFFY between the shoulder pad and the cuff -- widest round the
+# elbow, gathering in again just inside the cuff (FBX: sleeve about as wide as the cuff's top edge).
+PUFF = [(0.0, 0.000), (0.45, 0.000), (0.62, 0.004), (0.80, 0.008), (1.0, 0.010), (1.045, 0.008),
+        (1.09, 0.002), (1.14, 0.000)]
 
 
 def sleeve_R(s):
-    """Smooth sleeve radius (no folds)."""
+    """Smooth sleeve radius (no creases)."""
     t = min(max(t_of(s), 0.0), 2.0)
-    return S.arm_radius(t) + CL["sleeve_offset"] + keyf(t, BAG)
+    return S.arm_radius(t) + CL["sleeve_offset"] + keyf(t, PUFF)
 
 
 def sleeve_k(s):
@@ -204,75 +212,142 @@ def clamp_to_coat(p, weight=1.0, gap=0.004):
     return p
 
 
-# ------------------------------------------------------------------ sleeve wrinkles
-class Fold:
-    """One stylised sleeve fold (callout_elbow / front_arm_* / side_arm): a band wrapping the whole
-    sleeve that rises as a broad rounded roll, steps OUT by `amp` at a crisp crest and tucks back in
-    to a tight crease just below it.  The fold plane is tilted: it sits `tilt` lower (further down the
-    arm) on the inside of the elbow (FOLD_LOW_DEG) than on the back-outer side.
-    l = crest position (nominal distance from the shoulder, on the high side), widths in metres."""
-
-    def __init__(self, l, amp, tilt, rise, drop, back, crease=0.22):
-        self.l, self.amp, self.tilt, self.rise, self.drop, self.back, self.crease = l, amp, tilt, rise, drop, back, crease
-
-    def rows(self):
-        """Edge loops of the fold -> [(u, height)], u = offset from the crest down the arm, height in
-        units of amp.  Loops bunch at the crest (support loop either side) and the crease."""
-        W, D, B = self.rise, self.drop, self.back
-        return [(-W, 0.0), (-0.55 * W, 1.0 - 0.45 ** 2), (-0.25 * W, 0.955), (-0.0045, 0.99), (0.0, 1.0),
-                (0.42 * D, 0.72), (D, -self.crease), (D + 0.35 * B, -0.45 * self.crease), (D + B, 0.0)]
-
-
-FOLD_LOW_DEG = 140.0                      # folds sag lowest here (front-inner: the elbow pit)
-# sleeve_front_*.png: between the shoulder armour and the cuff only two big folds: the big one half way
-# down the visible sleeve (just above the elbow), the second ~3/4 of the way, then a short clean
-# stretch into the cuff; above them the upper arm is a clean straight column.
-FOLDS = [Fold(0.234, 0.0140, 0.012, 0.030, 0.0070, 0.0130),      # the big elbow fold
-         Fold(0.274, 0.0115, 0.010, 0.019, 0.0060, 0.0120)]      # second fold, between elbow and cuff
-ROW_GAP = 0.016                           # max row spacing on the clean stretches between folds
+# ------------------------------------------------------------------ sleeve crumples (round 5, FBX A1)
+# The FBX sleeve is a crumpled tube of big flat facets: irregular creases that zig-zag diagonally round
+# the arm, some standing out as sharp ridges, some pinching in as valleys, each fading out or flipping
+# somewhere round the circumference -- never a clean roll -- strongest at the elbow and where the sleeve
+# bunches onto the cuff.  Built as real geometry: every crease is ONE edge loop of the 32-around sleeve
+# (the loop zig-zags along the arm with the crease), rows between creases are straight interpolations
+# (flat facets), and the strong creases get a support loop on either side (crisp under subdivision).
+# (s0 - LU, sign (+ ridge / - valley), amplitude [m], support loops)
+CREASES = [(-0.138, -1, 0.0090, False),      # just under the shoulder pad's lower edge
+           (-0.116, +1, 0.0175, False),
+           (-0.094, -1, 0.0120, False),
+           (-0.072, +1, 0.0160, True),
+           (-0.052, -1, 0.0120, False),
+           (-0.034, +1, 0.0155, True),       # elbow crumples: the strongest
+           (-0.019, -1, 0.0115, True),
+           (-0.005, +1, 0.0155, True),
+           (0.008, -1, 0.0085, True),
+           (0.020, +1, 0.0105, True),        # the sleeve bunching onto the cuff
+           (0.032, -1, 0.0045, False)]       # ~ at the cuff's top edge, then a calm run into the cuff
+SLEEVE_END = 0.056                        # sleeve ends LU + this (inside the cuff; I6: do not raise)
+CREASE_TILT = [(-0.14, 0.004), (-0.06, 0.008), (-0.01, 0.011), (0.03, 0.006)]   # sag toward the elbow pit
+DIAG = 0.50                               # crease slant round the arm (x the gap): creases run diagonal, merge
+ZIG = 0.45                                # crease zig-zag along the arm, x the gap to the nearer neighbour
+SUPPORT_E = 0.0026                        # support loop distance from a crease (along the arm)
+MIN_GAP = 0.0070                          # creases never come closer than this (per column)
+ROW_GAP = 0.016                           # max row spacing on the facets between creases
+SEEDS = (11, 29)
+CUFF_ZONE = (0.012, 0.021)                # from LU + 0.021 on (cuffs.py collar ring top edge LU + 0.023..0.035) ...
+CUFF_R_MAX = 0.0605                       # ... the sleeve stays inside this radius (collar ring inner apothem 0.064)                          # left / right sleeve: same design, different crumples
 
 
 def fold_low(phi):
-    """0 (back-outer) .. 1 (inside of the elbow): how far a tilted fold row drops at angle phi."""
+    """0 (back-outer) .. 1 (inside of the elbow): how far a tilted crease row drops at angle phi."""
     return 0.5 + 0.5 * math.cos(phi - math.radians(FOLD_LOW_DEG))
 
 
-def fold_amp(phi):
-    """The folds wrap all the way round, a little fuller on the inside of the elbow."""
-    return 0.92 + 0.08 * math.cos(phi - math.radians(FOLD_LOW_DEG))
+FOLD_LOW_DEG = 140.0                      # creases sag lowest here (front-inner: the elbow pit)
 
 
-def sleeve_rows(l0, l1):
-    """Square ring rows from l0 to l1 -> [(l, tilt, height_m)].  Rows tighten at every fold and are
-    evenly spaced (<= ROW_GAP) between folds; tilt blends between neighbouring folds."""
-    keys = []
-    for fd in FOLDS:
-        keys += [(fd.l + u, fd.tilt, h * fd.amp) for u, h in fd.rows()]
-    keys.sort()
-    merged = []
-    for k in keys:                                  # one fold's last row may be the next one's first
-        if merged and k[0] - merged[-1][0] < 0.001:
-            p = merged[-1]
-            merged[-1] = ((p[0] + k[0]) / 2, (p[1] + k[1]) / 2, (p[2] + k[2]) / 2)
+def _pl(knots, n):
+    """Piecewise-linear periodic curve through [(column, value)] sampled at columns 0..n-1."""
+    knots = sorted(knots)
+    out = []
+    for j in range(n):
+        for (c0, v0), (c1, v1) in zip(knots, knots[1:] + [(knots[0][0] + n, knots[0][1])]):
+            jj = j if j >= c0 else j + n
+            if c0 <= jj <= c1:
+                out.append(v0 + (v1 - v0) * (jj - c0) / max(c1 - c0, 1e-9))
+                break
         else:
-            merged.append(k)
-    keys = merged
-    rows = []
-    prev = (l0, 0.0, 0.0)
-    for k in keys + [(l1, keys[-1][1] * 0.5, 0.0)]:
-        gap = k[0] - prev[0]
-        n = max(1, math.ceil(gap / ROW_GAP - 1e-6))
-        for i in range(1, n):
-            f = i / n
-            rows.append((prev[0] + gap * f, prev[1] + (k[1] - prev[1]) * f, 0.0))
-        rows.append(k)
-        prev = k
-    return rows
+            out.append(knots[0][1])
+    return out
+
+
+def crease_rows(seed, l0, l1, n=None):
+    """Rows of the crumpled sleeve between l0 (exclusive, plain row) and l1 (sleeve end, plain row) ->
+    (rows, key_index): rows = [[(s, h) per column]], key_index[k] = row index of crease k."""
+    n = n or NS2
+    rnd = random.Random(seed)
+    keys = []
+    for k, (ds, sg, amp, sup) in enumerate(CREASES):
+        s0 = LU + ds + rnd.uniform(-0.0025, 0.0025)
+        prev_s = LU + CREASES[k - 1][0] if k else l0
+        next_s = LU + CREASES[k + 1][0] if k + 1 < len(CREASES) else l1
+        zig = ZIG * min(s0 - prev_s, next_s - s0)
+        tilt = keyf(ds, CREASE_TILT) * rnd.uniform(0.4, 1.5)
+        low = math.radians(FOLD_LOW_DEG + rnd.uniform(-70.0, 70.0))      # each crease sags its own way ...
+        diag, dph = rnd.uniform(-DIAG, DIAG) * min(s0 - prev_s, next_s - s0), rnd.uniform(0.0, TAU)   # ... and slants
+        # zig-zag knots (every ~4 columns, jittered) and amplitude knots (offset, so facets kink apart)
+        c0 = rnd.randrange(4)
+        sgn = rnd.choice((-1.0, 1.0))
+        zk = []
+        for m in range(n // 4):
+            sgn = -sgn if rnd.random() < 0.8 else sgn          # mostly alternating: diagonal zig-zags
+            zk.append(((c0 + 4 * m + rnd.choice((-1, 0, 0, 1))) % n, sgn * rnd.uniform(0.35, 1.0) * zig))
+        c1 = rnd.randrange(5)
+        hk = []
+        for m in range(n // 5 + 1):
+            r = rnd.uniform(0.45, 1.0)
+            if rnd.random() < 0.20:
+                r = rnd.uniform(-0.35, 0.15)              # the crease fades out / flips here
+            hk.append(((c1 + 5 * m + rnd.choice((0, 1))) % n, r))
+        dedup = {}
+        for c, v in zk:
+            dedup[c] = v
+        zk = list(dedup.items())
+        dedup = {}
+        for c, v in hk:
+            dedup[c] = v
+        hk = list(dedup.items())
+        zs, hs = _pl(zk, n), _pl(hk, n)
+        row = []
+        for j in range(n):
+            phi = TAU * j / n
+            inside = fold_low(phi)
+            s = s0 + zs[j] + tilt * (0.5 + 0.5 * math.cos(phi - low)) + diag * math.sin(phi - dph)
+            w = 0.70 + 0.30 * inside if ds > -0.06 else 1.0     # elbow creases: fuller in the elbow pit
+            row.append([s, sg * amp * hs[j] * w])
+        keys.append((row, sup))
+    # keep creases ordered with a minimum gap in every column (forward, then back from the sleeve end)
+    def need(k):                                         # min gap between row k-1 (or l0) and crease k
+        return MIN_GAP + (SUPPORT_E if keys[k][1] else 0.0) + (SUPPORT_E if k and keys[k - 1][1] else 0.0)
+    for j in range(n):
+        lo = l0
+        for k, (row, sup) in enumerate(keys):
+            row[j][0] = max(row[j][0], lo + need(k))
+            lo = row[j][0]
+        hi = l1 - 0.016
+        for k in range(len(keys) - 1, -1, -1):
+            keys[k][0][j][0] = min(keys[k][0][j][0], hi)
+            hi = keys[k][0][j][0] - need(k)
+    # rows: plain start -> creases (+ support loops) -> plain end; filler rows on long facets
+    seq = [([[l0, 0.0] for _ in range(n)], False)] + keys + [([[l1, 0.0] for _ in range(n)], False)]
+    rows, key_index = [], []
+    for k in range(len(seq) - 1):
+        (ra, sa), (rb, sb) = seq[k], seq[k + 1]
+        gaps = [rb[j][0] - ra[j][0] for j in range(n)]
+        fr = []
+        if sa:
+            fr.append([SUPPORT_E / g for g in gaps])
+        nf = max(1, math.ceil(sum(gaps) / n / ROW_GAP - 0.25))
+        for i in range(1, nf):
+            fr.append([i / nf] * n)
+        if sb:
+            fr.append([1.0 - SUPPORT_E / g for g in gaps])
+        for f in fr:
+            rows.append([(ra[j][0] + gaps[j] * f[j], ra[j][1] + (rb[j][1] - ra[j][1]) * f[j]) for j in range(n)])
+        if k + 1 < len(seq) - 1:
+            key_index.append(len(rows))
+        rows.append([tuple(v) for v in rb])
+    return rows, key_index
 
 
 def clamp_axis(p):
     """Keep the upper sleeve (z > 1.36, under the shoulder armour) inside arm radius + AXIS_LIM of the
-    straight spec arm axis: wrinkle crests get softly pressed flat instead of poking out."""
+    straight spec arm axis: crease ridges get softly pressed flat instead of poking out."""
     w = keyf(p.z, [(1.345, 0.0), (1.362, 1.0)], smooth=True)
     if w <= 0.0:
         return p
@@ -289,11 +364,10 @@ def clamp_axis(p):
 
 
 # ------------------------------------------------------------------ sleeve
-def build_sleeve(path):
+def build_sleeve(path, seed=SEEDS[0]):
     """Sleeve from the armhole seam to inside the cuff.  16 around at the seam (welded to the coat by
     position), a 2-row all-quad 16 -> 32 transition band just below it (every other quad splits
-    one-into-three: valence-3/5 poles, no triangles), then 32 around: tilted rings whose spacing
-    tightens at each fold (see Fold.rows) and stays even (<= ROW_GAP) between folds."""
+    one-into-three: valence-3/5 poles, no triangles), then 32 around: the crumpled part (crease_rows)."""
     # --- armhole seam in cylinder coordinates around the upper arm axis (continuous index u in 0..NS)
     _, _, e1, e2 = path.at(0.0)
     up_ = V((0.34, 0.0, 0.94)).normalized()
@@ -326,16 +400,16 @@ def build_sleeve(path):
         p = c + (f1 * math.cos(phi) + f2 * math.sin(phi)) * rho
         return clamp_axis(clamp_to_coat(p, weight=1.0, gap=0.004 + 0.003 * max(0.0, 1.0 - x / 0.35)))
 
-    def ring_pt(s, phi, tilt=0.0, h=0.0):
-        """Point of a ring at nominal s; tilt: row drops this much on the inside of the elbow;
-        h: fold height of the row (radial step out, along the outward normal)."""
+    def ring_pt(s, phi, h=0.0):
+        """Point of a ring at nominal s; h: crease height (radial step along the outward normal)."""
         sp = math.sin(phi)
-        si = s + tilt * fold_low(phi)
-        c, t, f1, f2 = path.at(si)
-        kx, ky = sleeve_k(si)
-        R = sleeve_R(si)
-        d = h * fold_amp(phi)
-        d += ELBOW_POINT * max(0.0, -sp) * math.exp(-((si - LU) / 0.020) ** 2)
+        c, t, f1, f2 = path.at(s)
+        kx, ky = sleeve_k(s)
+        R = sleeve_R(s)
+        d = h + ELBOW_POINT * max(0.0, -sp) * math.exp(-((s - LU) / 0.020) ** 2)
+        w = keyf(s, [(LU + CUFF_ZONE[0], 0.0), (LU + CUFF_ZONE[1], 1.0)])
+        if w > 0.0 and R + d > CUFF_R_MAX:                         # creases never poke through the cuff
+            d += (CUFF_R_MAX - R - d) * w
         nx, ny = math.cos(phi) * kx, sp * ky                      # point on the ellipse ...
         gx, gy = math.cos(phi) / kx, sp / ky                      # ... and its outward normal
         g = math.hypot(gx, gy)
@@ -354,11 +428,11 @@ def build_sleeve(path):
     for k in range(4, KB + 1):
         rows.append([blend_pt(k / KB, j * NS / NS2, k) for j in range(NS2)])
     n_blend32 = len(rows) - 3                                          # rows k = 4 .. KB
-    # square rings down the arm
-    rows_spec = sleeve_rows(A_END, LU + 0.056)          # ends ~3 cm inside the cuff's top edge
-    svals = [r[0] for r in rows_spec]
-    for s, tl, h in rows_spec:
-        rows.append([ring_pt(s, TAU * j / NS2, tl, h) for j in range(NS2)])
+    # crumpled rings down the arm (the last blend row at A_END is the plain start row)
+    crows, key_index = crease_rows(seed, A_END, LU + SLEEVE_END)
+    svals = [sum(s for s, _ in r) / NS2 for r in crows]
+    for r in crows:
+        rows.append([ring_pt(s, TAU * j / NS2, h) for j, (s, h) in enumerate(r)])
 
     # --- faces
     verts, faces = [], []
@@ -386,20 +460,20 @@ def build_sleeve(path):
             faces += [(t0, t1, m2, m1), (t0, m1, b1, b0), (m1, m2, b2, b1), (m2, t1, b3, b2)]
         else:                                           # one quad stays one (spans both rows)
             faces.append((t0, t1, B[(2 * k + 2) % NS2], B[(2 * k + 1) % NS2]))
-    # rows 3.. are all 32 around; split into upper / elbow support band / lower
-    s_all = [None] * (3 + n_blend32) + svals
-    def row_at(target):
-        return 3 + n_blend32 + min(range(len(svals)), key=lambda i: abs(svals[i] - target))
-    fe = FOLDS[-1]                                                 # elbow support band: the loops
-    i_el0, i_el1 = row_at(fe.l - 0.0045), row_at(fe.l + fe.drop + fe.back)   # of the fold at the elbow
+    # rows 3.. are all 32 around; split into upper / elbow band (the elbow crumples) / lower
+    base = 3 + n_blend32
+    s_all = [None] * base + svals
+    ke = [i for i, (ds, *_r) in enumerate(CREASES) if ds > -0.045]
+    i_el0 = base + key_index[ke[0]] - 1                 # from the support loop above the first elbow crease
+    i_el1 = base + key_index[min(ke[0] + 4, len(key_index) - 1)] + 1
     up_f = list(faces)
     for i in range(3, i_el0):
         up_f += band(ids[i], ids[i + 1])
     el_f = [f for i in range(i_el0, i_el1) for f in band(ids[i], ids[i + 1])]
     lo_f = [f for i in range(i_el1, len(ids) - 1) for f in band(ids[i], ids[i + 1])]
 
-    # --- lengthwise seam piping along vertex 2 of 16 / 4 of 32, following the wrinkled surface
-    i_end = row_at(LU + 0.030)                                        # piping ends just inside the cuff
+    # --- lengthwise underarm seam piping along vertex 8 of 16 / 16 of 32, following the crumpled surface
+    i_end = base + min(range(len(svals)), key=lambda i: abs(svals[i] - (LU + 0.030)))
     col = [ids[i][SEAM_PHI_INDEX if i < 3 else 2 * SEAM_PHI_INDEX] for i in range(i_end + 1)]
     seam_pts, seam_nrm = [], []
     for k, vi in enumerate(col):
@@ -421,13 +495,16 @@ def build_sleeve(path):
         used = sorted({v for f in fs for v in f})
         remap = {v: n for n, v in enumerate(used)}
         return lib.mesh_object(name, [verts[v] for v in used], [tuple(remap[v] for v in f) for f in fs],
-                               topo=topo, sharp_angle=180)
+                               topo=topo, sharp_angle=SLEEVE_SHARP)
 
-    seam_obj = lib.strip_along("Sleeve_seam_L", seam_pts, seam_nrm, width=0.0065, thickness=0.0020,
-                               sink=0.0008, profile="round", topo="main")
+    seam_obj = lib.strip_along("Sleeve_seam_L", seam_pts, seam_nrm, width=0.0050, thickness=0.0014,
+                               sink=0.0008, profile="flat", topo="main")
     return [obj("Sleeve_upper_L", up_f, "main"), seam_obj,
             obj("Sleeve_elbow_L", el_f, "support"),
             obj("Sleeve_lower_L", lo_f, "main")]
+
+
+SLEEVE_SHARP = 26.0                       # crease ridges / valleys steeper than this shade as hard edges
 
 
 # ------------------------------------------------------------------ bracer
@@ -519,8 +596,8 @@ W_KEYS = [(0.0, 0.0360), (0.25, 0.0385), (0.6, 0.0415), (1.0, PALM_HW)]
 T_KEYS = [(0.0, 0.0285), (0.3, 0.0205), (0.7, 0.0155), (1.0, 0.0116)]
 P_KEYS = [(0.0, 2.3), (0.3, 3.0), (1.0, 3.6)]
 FINGER_LEN = [0.078, 0.086, 0.080, 0.062]
-FINGER_FAN = [7.0, 1.5, -4.0, -9.5]                   # degrees, + towards the thumb (slightly spread)
-FINGER_BEND = [(10, 21, 13), (12, 24, 14), (15, 27, 15), (18, 30, 16)]   # MCP, PIP, DIP curl (deg)
+FINGER_FAN = [9.0, 2.0, -6.0, -13.5]                  # degrees, + towards the thumb (FBX: open hand, spread)
+FINGER_BEND = [(4, 7, 5), (5, 8, 5), (6, 9, 6), (7, 10, 6)]   # MCP, PIP, DIP curl (deg): relaxed, near straight
 FINGER_RV = [0.0101, 0.0103, 0.0100, 0.0091]
 
 
@@ -548,6 +625,7 @@ def back_v(u, s):
     return Td * (1.0 - xi ** p) ** (1.0 / p)
 
 
+FINGER_GROOVE = (0.0022, 0.90)                       # joint groove half width, ring scale
 RING8 = [(0.76, 0.76), (0.0, 1.0), (-0.76, 0.76), (-1.0, 0.0), (-0.76, -0.76), (0.0, -1.0), (0.76, -0.76), (1.0, 0.0)]
 # order: TL, TM, TR, RM, BR, BM, BL, LM   (T = back of hand, L = thumb side)
 
@@ -564,19 +642,19 @@ class Digit:
         self.cum = [0.0, Ls[0], Ls[0] + Ls[1], sum(Ls)]
         L1, L2, L3 = Ls
         Lt = self.cum[3]
+        # FBX A3: each phalanx is a plain faceted segment (8 around, hard edges) between narrow V grooves
+        # at the joints: a groove loop with a crisp segment-edge loop either side.
+        g = FINGER_GROOVE[0]
         st = [(sep, 1.0)]
-        span = L1 - e - sep
-        n = max(1, round(span / 0.010))
-        st += [(sep + span * i / n, 0.98) for i in range(1, n)]
-        st += [(L1 - e, 1.04), (L1 + e, 1.04)]
-        span = L2 - 2 * e
-        n = max(1, round(span / 0.010))
-        st += [(L1 + e + span * i / n, 0.97) for i in range(1, n)]
-        st += [(L1 + L2 - e, 1.03), (L1 + L2 + e, 1.03)]
-        xa, xb = L1 + L2 + e, Lt - 0.0100
-        n = max(1, round((xb - xa) / 0.008))
-        st += [(xa + (xb - xa) * i / n, 1.0) for i in range(1, n)]
-        st += [(xb, 0.99), (Lt - 0.0052, 0.90), (Lt - 0.0018, 0.60)]
+        ends = [L1 - g, L1 + L2 - g, Lt - 0.0095]
+        for i, (a, b) in enumerate(((0.0, L1), (L1, L1 + L2), (L1 + L2, Lt))):
+            a0 = sep if i == 0 else a + g
+            if i:
+                st += [(a, FINGER_GROOVE[1]), (a0, 1.0)]
+            b1 = ends[i]
+            n = max(1, round((b1 - a0) / 0.013))
+            st += [(a0 + (b1 - a0) * k / n, 1.0 + (0.02 if k < n else 0.0)) for k in range(1, n + 1)]
+        st += [(Lt - 0.0048, 0.90), (Lt - 0.0016, 0.58)]
         self.rings = [self.ring_at(x, sc) for x, sc in st]
         c, dd = self.at(Lt)
         fu, fv = self.frame(dd)
@@ -753,7 +831,7 @@ def build_hand():
     def Wf(p):
         return O + (wf * p.x + bf * p.y + D2 * p.z) * HS
 
-    hand = lib.mesh_object("Hand_L", [W(p) for p in verts], faces, topo="main", sharp_angle=180)
+    hand = lib.mesh_object("Hand_L", [W(p) for p in verts], faces, topo="main", sharp_angle=HAND_SHARP)
 
     # ---------------- wrist support loops
     Wd0, Td0, p0 = keyf(0.0, W_KEYS), keyf(0.0, T_KEYS), keyf(0.0, P_KEYS)
@@ -762,35 +840,35 @@ def build_hand():
         wr_rings.append([Wf(p).lerp(W(p), hw) for p in section(s, Wd0 * k, Td0 * k, p0)])
     wrist = lib.lofted("Wrist_L", wr_rings, topo="support", sharp_angle=180)
 
-    # ---------------- short flared glove cuff: a rolled lip just above the wrist, flaring up into the bracer
+    # ---------------- glove cuff (FBX A3): a plain tube coming out of the forearm cuff ...
     Wb, Tb = Wd0 * 0.96, Td0 * 0.96
-    prof = [(0.0010, 0.0008), (0.0010, 0.0042), (-0.0015, 0.0056), (-0.0045, 0.0052), (-0.0080, 0.0050),
-            (-0.0160, 0.0062), (-0.0300, 0.0068), (-0.0300, 0.0038), (-0.0120, 0.0016)]
-    cuff = lib.mesh_object("Glove_cuff_L", *loop_loft([[Wf(p) for p in section(s, Wb + g, Tb + g * 1.4, 2.3)]
-                                                        for s, g in prof]), topo="main", sharp_angle=60)
 
-    # ---------------- rigid bits: small round rivets on the knuckles + a small star on the back of the hand
-    armor = []
-    kr = [(grid[NR - 2][j] + grid[NR - 1][j]) * 0.5 for j in range(1, 10)]
-    for f in range(4):
-        i = 1 + 2 * f
-        tg = kr[i + 1] - kr[i - 1]
-        n = tg.cross(V((0.0, 0.0, 1.0))).normalized()
-        n = n if n.y > 0 else -n
-        armor.append(lib.rivet(f"knuckle_rivet_{f}", radius=(0.0050 if f < 3 else 0.0044) * HS, height=0.0042,
-                               n=12, loc=W(kr[i]) - Wd(n) * 0.0006, normal=Wd(n)))
-    pc_u, pc_s = -0.001, 0.045
-    armor.append(lib.emblem_cross("hand_star", size=0.0085, thickness=0.0018, long_tail=1.5,
-                                  loc=W(V((pc_u, back_v(pc_u, pc_s), pc_s))) - Wd(V((0.0, 1.0, 0.0))) * 0.0004,
-                                  normal=Wd(V((0.0, 1.0, 0.08))), up=-d))
-    armor = lib.join(armor, "Hand_armor_L", topo="rigid")
-    return [cuff, wrist, hand, armor]
+    def shell(prof, pw=2.3):
+        return loop_loft([[Wf(p) for p in section(s, Wb + g, Tb + g * 1.4, pw)] for s, g in prof])
+
+    cuff = lib.mesh_object("Glove_cuff_L", *shell([(0.0000, 0.0012), (0.0000, 0.0046), (-0.0300, 0.0056),
+                                                   (-0.0300, 0.0030), (-0.0120, 0.0014)]),
+                           topo="main", sharp_angle=45)
+    # ... ending in a raised, flat-faced cuff rim round the wrist with crisp bevelled edges (Hand_armor_L:
+    # the stiff rim band; no knuckle rivets, no star any more)
+    rim = lib.mesh_object("Hand_armor_L", *shell([(0.0075, 0.0018), (0.0075, 0.0060), (0.0062, 0.0076),
+                                                 (-0.0010, 0.0076), (-0.0023, 0.0060), (-0.0023, 0.0018)]),
+                          topo="rigid", sharp_angle=40)
+    return [cuff, wrist, hand, rim]
 
 
 # ------------------------------------------------------------------ entry point
 def build():
     path = ArmPath()
-    # the turned-back forearm cuff (build_bracer) moved to parts/cuffs.py, which imports this module
-    left = build_sleeve(path) + build_hand()
-    right = [lib.mirror_copy(o) for o in left]
+    # the forearm cuff moved to parts/cuffs.py, which imports this module.
+    # The right sleeve is built from the left design with its own crumples (SEEDS[1]), then mirrored.
+    tmp = build_sleeve(path, seed=SEEDS[1])
+    right_sleeve = [lib.mirror_copy(o) for o in tmp]
+    for o in tmp:
+        me = o.data
+        bpy.data.objects.remove(o)
+        bpy.data.meshes.remove(me)
+    hand = build_hand()
+    left = build_sleeve(path, seed=SEEDS[0]) + hand
+    right = right_sleeve + [lib.mirror_copy(o) for o in hand]
     return left + right

@@ -1,18 +1,29 @@
-"""Legs (round 2): baggy bloused trousers, chunky splayed ankle boots with lugged soles, straps, buckles.
+"""Legs (round 5, matched to the user's FBX game model): straight, slightly loose trousers with a few
+crisp knee crumples and a scrunched hem over a slim lower leg, low heeled ankle boots.
 
 Objects (build() order)
     trousers                 main     pelvis (40) -> crotch gusset -> 2 thigh tubes (24), down to the knee loops
     trouser_knee_L / _R      support  the 3 tight knee loops (own object, shares its boundary rings)
-    trouser_blouse_L / _R    main     bloused lower leg: 3 sagging fold rolls, roll-over hem, tucked into the boot
-    boot_upper_L / _R        main     cuff + shaft + foot (foot extruded from a front patch of the shaft), toe cap
-    boot_sole_L / _R         rigid    lugged outsole + heavy welt, heel block, arch notch
-    boot_straps_L / _R       main     tongue + lace bars, ankle/instep strap (diagonal, square buckle),
-                                      wide top cuff strap with tail (big square buckle front-outer)
-    boot_hardware_L / _R     rigid    2 square frame buckles + prongs, keeper, punched eyelets, rivet
+    trouser_blouse_L / _R    main     lower trouser leg (name kept for the pose stage): straight shin with knee
+                                      crumples -> 3-4 compressed hem folds -> hem tucked onto a slim lower leg
+                                      -> pinched under the ankle cuff -> short crisp crumples -> into the boot
+    boot_upper_L / _R        main     low boot: rolled collar + short shaft + heel, foot extruded from a front
+                                      patch, long low squared toe with a proud toe-cap panel (seam step)
+    boot_counter_L / _R      main     raised heel-counter panel wrapping the back of the heel, with a raised rim
+    boot_sole_L / _R         rigid    thin forefoot sole plate with a protruding lip, rising through the arch
+                                      onto the heel block (clear arch gap underneath), slight toe spring
+    boot_heel_L / _R         rigid    tall block heel with a flared top lip
+    boot_straps_L / _R       main     2 wide flat instep straps stacked diagonally (rear one on top) with end
+                                      tabs, wrapped ankle cuff band, vertical gaiter strip on the outer side
+    boot_hardware_L / _R     rigid    square cuff buckle (outer side) with prong
 
 Boots are modelled in a local frame (x = outer side, -y = toe, origin under the ankle on the HEEL->TOE
 line) and turned onto the spec's splayed HEEL -> TOE axis.  Right side = mirror copies, except the
-blouse, which is built per side with different fold seeds (the reference's folds are not mirrored).
+lower trouser leg, which is built per side with different fold phases (folds are not mirrored).
+
+Spec-derived dimensions adjusted here (FBX: longer, lower forefoot, heel counter close to the ankle):
+the sole tip sits TOE_EXT beyond spec TOE along the HEEL->TOE line and the sole back HEEL_IN in front
+of spec HEEL.
 """
 import math
 
@@ -24,19 +35,6 @@ from .. import lib, spec as S
 
 TAU = math.tau
 C = S.CLOTH
-
-# ------------------------------------------------------------------ constants read off the reference sheet
-# (docs/ref/front_legs.png, side_legs.png, back_legs.png, measured with tools/compare.py at 1.895 m figure height)
-BOOT_DX = 0.008          # boot sits this far outside the spec HEEL->TOE line (ref FRONT: shaft x 0.113-0.22)
-SY = 0.020               # heel counter centre this far behind the ankle (ref SIDE: heel back ~0.09 behind it)
-SHAFT_EASE = (0.0145, 0.030, 0.0085)   # slim shaft = bare leg + this (side, back, front); ref shaft 0.107 wide,
-                                     # ~0.12 deep in SIDE (the reference's shaft is deeper than wide)
-SHAFT_DX = 0.008         # shaft axis this far outside the bare leg line (ref FRONT: shaft centre x ~0.167)
-SOLE_T = 0.030           # sole + welt thickness (review: reference sole ~3 cm)
-ZB = SOLE_T - 0.003      # bottom of the upper, sunk into the sole
-BLOUSE_DX = 0.001        # blouse centre vs boot axis (ref FRONT: blouse x 0.064-0.256 at z 0.32 -> centre 0.16)
-BLOUSE_DY = 0.030        # ... and hangs back (ref SIDE: blouse centre ~0.05 behind the hat centre line)
-CUFF_STRAP_Z = (0.157, 0.207)   # wide strap round the boot top (ref FRONT: strap z 0.15-0.205)
 
 
 # ------------------------------------------------------------------ small helpers
@@ -118,6 +116,12 @@ class MB:
 
 
 # ------------------------------------------------------------------ boot frame (left)
+TOE_EXT = 0.030          # sole tip this far beyond spec TOE (FBX: long low forefoot, ~0.23 in front of the ankle)
+HEEL_IN = 0.025          # sole back this far in front of spec HEEL (FBX: heel counter ~7 cm behind the ankle)
+BOOT_DX = 0.008          # boot sits this far outside the spec HEEL->TOE line
+SY = 0.022               # heel counter centre this far behind the ankle
+SHAFT_DX = 0.002         # lower-leg axis this far outside the bare leg line
+
 _A = V((S.TOE.x - S.HEEL.x, S.TOE.y - S.HEEL.y, 0.0))
 FOOT_LEN = _A.length
 _A.normalize()                                    # toe direction (splayed outward)
@@ -126,7 +130,8 @@ if _P.x < 0:
     _P = -_P
 S_ANK = (S.ANKLE - S.HEEL).dot(_A)                # ankle position along the foot
 _O = V((S.HEEL.x, S.HEEL.y, 0.0)) + _A * S_ANK + _P * BOOT_DX
-Y_HEEL, Y_TOE = S_ANK, S_ANK - FOOT_LEN           # local y of the sole's back / front tip
+Y_HEEL = S_ANK - HEEL_IN                          # local y of the sole's back ...
+Y_TOE = S_ANK - FOOT_LEN - TOE_EXT                # ... and front tip
 PHI = math.atan2(_P.y, _P.x)                      # rotation of the local frame (rad)
 
 
@@ -142,27 +147,6 @@ def to_local(w):
     return d.dot(_P), -d.dot(_A)
 
 
-def shaft_axis(z):
-    """Local xy of the boot shaft axis: follows the bare leg line above the ankle (so the leather always
-    clears the spec body) and swings onto the heel counter centre (0, SY) at the foot."""
-    p = S.leg_point(min(max(leg_t(max(z, S.ANKLE.z)), 0.0), 2.0))
-    lx, ly = to_local((p.x + SHAFT_DX, p.y))
-    w = _sstep((z - 0.060) / 0.050)
-    return _lerp(0.0, lx, w), _lerp(SY, ly, w)
-
-
-def _bare_r(z):
-    return S.leg_radius(min(max(leg_t(max(z, S.ANKLE.z)), 0.0), 2.0))
-
-
-def shaft_c(z):
-    """World xy of the boot shaft axis."""
-    sx, sy = shaft_axis(z)
-    w = to_world((sx, sy, z))
-    return w.x, w.y
-
-
-# ------------------------------------------------------------------ leg guide
 def leg_t(z):
     if z >= S.KNEE.z:
         return (S.HIP.z - z) / (S.HIP.z - S.KNEE.z)
@@ -174,12 +158,43 @@ def leg_c(z):
     return p.x, p.y
 
 
-def lower_c(z):
-    """Trouser centre line: the leg line above the knee, drifting onto the boot shaft (+ hang) below it."""
-    lx, ly = leg_c(z)
-    bx, by = shaft_c(C["boot_top_z"])
-    s = _sstep((0.53 - z) / 0.25)
-    return _lerp(lx, bx + BLOUSE_DX, s), _lerp(ly, by + BLOUSE_DY, s)
+def _bare_r(z):
+    return S.leg_radius(min(max(leg_t(max(z, S.ANKLE.z)), 0.0), 2.0))
+
+
+def shaft_axis(z):
+    """Local xy of the lower-leg / boot axis: follows the bare leg line above the ankle and swings onto the
+    heel counter centre (0, SY) at the foot."""
+    p = S.leg_point(min(max(leg_t(max(z, S.ANKLE.z)), 0.0), 2.0))
+    lx, ly = to_local((p.x + SHAFT_DX, p.y))
+    w = _sstep((z - 0.060) / 0.050)
+    return _lerp(0.0, lx, w), _lerp(SY, ly, w)
+
+
+def shaft_c(z):
+    """World xy of the lower-leg axis."""
+    sx, sy = shaft_axis(z)
+    w = to_world((sx, sy, z))
+    return w.x, w.y
+
+
+def _front_w(psi):
+    """1 at the front of a ring (local angle 270 deg), 0 beyond +-80 deg."""
+    d = abs(math.degrees(psi % TAU) - 270.0)
+    return math.cos(math.radians(90.0 * d / 80.0)) ** 2 if d < 80.0 else 0.0
+
+
+# ------------------------------------------------------------------ slim lower leg (trouser under the hem)
+TUBE_EASE = (0.0065, 0.0100, 0.0060)      # side, back, front ease over the bare leg (FBX: slim ~8 cm shaft)
+
+
+def tube_pt(z, a, d=0.0):
+    """Local point on the slim lower-leg surface at local angle a (0 outer, 90 back), offset d outward."""
+    sx, sy = shaft_axis(z)
+    b = _bare_r(z)
+    s = math.sin(a)
+    ry = (b + TUBE_EASE[1] if s > 0 else b + TUBE_EASE[2]) + d
+    return V((sx + (b + TUBE_EASE[0] + d) * math.cos(a), sy + ry * s, z))
 
 
 # ================================================================== TROUSERS
@@ -191,78 +206,97 @@ WAIST_Z = 1.200                 # open top edge, under coat + belt (belt zone al
 PELVIS_Z = [WAIST_Z, 1.125, 1.050, 0.985, Z_SPLIT]
 SPLIT_DIP = 0.028               # split ring sags this much at the centre front / back
 SPLIT_RY = S.torso_section(Z_SPLIT)[2] + 0.012
-BLOUSE_Z0, BLOUSE_Z1, BLOUSE_R = C["trouser_blouse"]
-BOOT_TOP = C["boot_top_z"]
 KZ = S.KNEE.z
 KNEE_ROWS = [KZ + 0.030, KZ + 0.012, KZ, KZ - 0.012, KZ - 0.030]     # 3 tight loops inside a 6 cm band
+CALF = 0.07                     # lower leg is a little deeper than wide (behind the shin)
 
 
 def _thigh_r(z):
-    """Trouser radius on the thigh: bare leg + cloth (snug at the hip, ~0.02 baggy further down)."""
+    """Trouser radius on the thigh: bare leg + a slim, slightly loose ease (FBX: straight trousers)."""
     t = max(leg_t(z), 0.0)
-    return S.leg_radius(t) + 0.012 + 0.008 * _sstep(t / 0.45)
+    return S.leg_radius(t) + 0.004 + 0.007 * _sstep(t / 0.6)
 
 
-THIGH_Z = [0.905, 0.860, 0.808, 0.750, 0.690, 0.630, KNEE_ROWS[0]]
+THIGH_Z = [0.905, 0.860, 0.808, 0.750, 0.690, 0.640, 0.600, KNEE_ROWS[0]]
 _DIP = {0: 0.030, 1: 0.018, 2: 0.008}          # leg rings just under the crotch tilt down on the inside
 _SEAT = {0: 0.50, 1: 0.24, 2: 0.08}            # ... and keep some of the seat depth (front / back)
 _UNTWIST = {0: 0.55, 1: 0.85}                  # ... and part of the split ring's plan shape
 
-# bloused lower leg, top -> bottom: (z, radius about lower_c, sag weight).  ONE smooth overhang (review:
-# the reference blouse is a single puff), its rounded hem sags a little toward the front.
-BLOUSE_ROWS = [
-    (0.474, 0.0905, 0.00), (0.442, 0.0950, 0.00), (0.413, 0.0975, 0.00), (0.385, 0.0990, 0.05),
-    (0.359, 0.1000, 0.15), (0.336, 0.1000, 0.35), (0.316, 0.0985, 0.60), (0.303, 0.0945, 0.85),
-    (0.2955, 0.0870, 1.00), (0.2935, 0.0770, 1.00),                                          # rounded hem, underside
-]
-# then a slim gathered gaiter round the shin, tucked over the boot rim into the boot:
-# (z, offset from the boot shaft surface, sag weight)
-TUCK_ROWS = [(0.2890, 0.0060, 0.9), (0.2740, 0.0042, 0.4), (0.2610, 0.0032, 0.0), (0.2505, 0.0026, 0.0),
-             (0.2490, -0.0006, 0.0), (0.2470, -0.0044, 0.0), (0.2400, -0.0055, 0.0), (0.2280, -0.0060, 0.0)]
-SAG = 0.008                     # how far the hem droops (most at the front)
+# straight lower leg below the knee loops: (z, radius about lower_c)
+LOWER_ROWS = [(0.492, 0.0730), (0.474, 0.0720), (0.452, 0.0705), (0.430, 0.0690), (0.408, 0.0678),
+              (0.388, 0.0668), (0.372, 0.0660)]
+# scrunched hem: (z, radius, crest weight).  Short compressed folds (crest / valley pairs ~1 cm apart).
+BUNCH_ROWS = [(0.361, 0.0660, 0.45), (0.351, 0.0645, -0.25), (0.338, 0.0665, 1.00), (0.326, 0.0645, -0.30),
+              (0.313, 0.0670, 1.00), (0.301, 0.0650, -0.25), (0.291, 0.0665, 0.85), (0.2835, 0.0620, 0.20)]
+BUNCH_AMP = 0.0100
+# tuck under the hem onto the slim lower leg, then down the leg, under the ankle cuff, crumpled above the
+# boot collar and into the boot: (z, offset from the tube surface, crumple weight)
+CUFF_Z = (0.153, 0.198)        # wrapped ankle cuff band (FBX: cuff z ~0.15-0.20, square buckle outer side)
+COLLAR_Z, COLLAR_ARCH = 0.116, 0.016     # boot collar height at the back, rise over the instep
+TUBE_ROWS = [(0.2785, 0.0105, 0.0), (0.2735, 0.0062, 0.0), (0.2670, 0.0030, 0.0), (0.2520, 0.0018, 0.0),
+             (0.2330, 0.0016, 0.0), (0.2150, 0.0020, 0.0), (0.2050, 0.0030, 0.0), (0.1995, 0.0004, 0.0),
+             (0.1760, -0.0004, 0.0), (0.1525, 0.0004, 0.0),
+             (0.1490, 0.0040, 0.30), (0.1452, 0.0060, 0.90), (0.1418, 0.0060, 0.60), (0.1388, 0.0040, -0.30),
+             (0.1352, 0.0060, 0.80), (0.1316, 0.0060, 1.00), (0.1282, 0.0045, 0.40), (0.1256, 0.0030, -0.30),
+             (0.1224, 0.0050, 0.70), (0.1190, 0.0030, 0.20), (0.1120, 0.0005, 0.0),
+             (0.1000, -0.0015, 0.0), (0.0920, -0.0025, 0.0)]
+CRUMPLE_AMP = 0.0085
+_CRUMPLE_GROUP = {0.149: 0, 0.1452: 0, 0.1418: 0, 0.1388: 1, 0.1352: 1, 0.1316: 1, 0.1282: 1, 0.1256: 2,
+                  0.1224: 2, 0.119: 2}
 
 
-def _creases(th, z, side):
-    """Vertical creases (radial metres), strongest where the blouse gathers above the rolls."""
-    u = th / TAU
-    v = _sstep((0.50 - z) / 0.12)
-    amp = 0.0040 * v * (1.0 - 0.40 * _sstep((0.36 - z) / 0.07)) + 0.0010
-    return lib.fold_wave(u, (z - 0.25) / 0.30, amp=amp, count=3.0, seed=0.37 if side > 0 else 0.81, grow=0.0)
+def _knee_ridges(side):
+    """Crisp knee crumples (fold_ridges, (s, l) in metres; s = angle * 0.075)."""
+    R = 0.075
+    sd = 0.0 if side > 0 else 1.7
+
+    def s(deg):
+        return R * math.radians(deg)
+    out = lib.zigzag_ridges(s(50), s(130), 0.492, 0.604, 3, amp=0.0065, width=0.012, sharp=0.7, seed=0.4 + sd)
+    out += [dict(pts=[(s(200), 0.606), (s(250), 0.582), (s(305), 0.594)], amp=0.0060, width=0.013, sharp=0.7),
+            dict(pts=[(s(220), 0.524), (s(272), 0.500), (s(330), 0.518)], amp=0.0065, width=0.013, sharp=0.7),
+            dict(pts=[(s(325), 0.570), (s(370), 0.546), (s(410), 0.560)], amp=0.0050, width=0.012, sharp=0.65),
+            dict(pts=[(s(140), 0.472), (s(185), 0.456), (s(225), 0.466)], amp=0.0040, width=0.012, sharp=0.6),
+            # long drape creases down the shin, fading into the hem bunch
+            dict(pts=[(s(262 + 20 * sd), 0.480), (s(256 + 20 * sd), 0.420), (s(266 + 20 * sd), 0.365)],
+                 amp=0.0030, width=0.012, sharp=0.55),
+            dict(pts=[(s(318), 0.470), (s(326), 0.410), (s(316), 0.370)], amp=0.0028, width=0.012, sharp=0.55),
+            dict(pts=[(s(28), 0.455), (s(20), 0.400)], amp=0.0024, width=0.012, sharp=0.5)]
+    return out
 
 
-def _sag(th, side, z=0.3):
-    """How much the rolls droop at angle th (1 = most): front-outer on the left leg, front-inner on the right.
-    The droop direction wanders a little from roll to roll, so the folds are not parallel rings."""
-    wander = 0.25 * math.sin(z * 60.0 + (1.3 if side > 0 else 4.1))
-    return 0.55 + 0.45 * math.cos(th - math.radians(285.0 if side > 0 else 255.0) + wander)
+_RIDGES = {1: _knee_ridges(1), -1: _knee_ridges(-1)}
 
 
-def trouser_pt(z, r, th, side=1, dip=0.0, seat=0.0, sag=0.0, folds=True):
+def _folds(th, z, side):
+    """Radial cloth displacement: faint long creases + the knee crumples."""
+    dr = 0.0012 * math.sin(3 * th + 21.0 * z + side)
+    if 0.355 < z < 0.64:
+        dr += lib.fold_ridges(0.075 * th, z, _RIDGES[side], period=0.075 * TAU)
+    return dr
+
+
+def lower_c(z):
+    """Trouser centre line: the leg line, drifting onto the slim lower-leg axis toward the ankle."""
+    lx, ly = leg_c(z)
+    bx, by = shaft_c(z)
+    s = _sstep((0.50 - z) / 0.20)
+    return _lerp(lx, bx, s), _lerp(ly, by, s)
+
+
+def trouser_pt(z, r, th, side=1, dip=0.0, seat=0.0, folds=True, dz=0.0):
     """Point on the LEFT trouser leg (side only picks the fold pattern). th: 0 outer, 90 back, 270 front."""
     cx, cy = lower_c(z)
     x_out, x_in = cx + r, max(cx - r, GAP)
     ex, rx = 0.5 * (x_out + x_in), 0.5 * (x_out - x_in)
-    dr = 0.0
-    if folds:
-        if z < 0.52:
-            dr = _creases(th, z, side)
-        else:
-            dr = 0.0018 * math.sin(3 * th + 21.0 * z + side)
-        dr = min(dr, BLOUSE_R + 0.002 - r)
+    dr = _folds(th, z, side) if folds else 0.0
     k = 1.0 + dr / r
+    s = math.sin(th)
+    calf = CALF * _sstep((0.52 - z) / 0.08) * max(0.0, s)
     x = max(ex + rx * math.cos(th) * k, GAP - 0.004)
-    y = cy + (r + seat * (SPLIT_RY - _thigh_r(Z_SPLIT))) * math.sin(th) * k
-    zz = z - dip * ((1 - math.cos(th)) * 0.5) ** 1.5 - sag * SAG * _sag(th, side, z)
+    y = cy + (r * (1.0 + calf) + seat * (SPLIT_RY - _thigh_r(Z_SPLIT))) * s * k
+    zz = z - dip * ((1 - math.cos(th)) * 0.5) ** 1.5 + dz
     return V((x, y, zz))
-
-
-def boot_rel_pt(z, d, th):
-    """Point at offset d outside the boot shaft surface (world angle th) - used for the tucked hem."""
-    a = th - PHI
-    sx, sy = shaft_axis(z)
-    rx = rad_s(z) + d
-    ry = (rad_b(z) if math.sin(a) > 0 else rad_f(z)) + d
-    return to_world((sx + rx * math.cos(a), sy + ry * math.sin(a), z))
 
 
 def _split_xy(i):
@@ -286,11 +320,11 @@ def _pelvis_pt(i, z):
     return pu.lerp(V((sx, sy, z - dz)), s)
 
 
-def _leg_ring(z, side, k=None, r=None, sag=0.0):
+def _leg_ring(z, side, k=None, r=None):
     r = _thigh_r(z) if r is None else r
     pts = []
     for j in range(NL):
-        p = trouser_pt(z, r, TAU * j / NL, side, dip=_DIP.get(k, 0.0), seat=_SEAT.get(k, 0.0), sag=sag)
+        p = trouser_pt(z, r, TAU * j / NL, side, dip=_DIP.get(k, 0.0), seat=_SEAT.get(k, 0.0))
         pts.append(V((p.x * side, p.y, p.z)))
     return pts
 
@@ -339,27 +373,189 @@ def build_trousers():
 
 
 def _knee_r(z):
-    return _lerp(_thigh_r(KNEE_ROWS[0]), BLOUSE_ROWS[0][1] - 0.006, (KNEE_ROWS[0] - z) / (KNEE_ROWS[0] - KNEE_ROWS[-1]))
+    return _lerp(_thigh_r(KNEE_ROWS[0]), LOWER_ROWS[0][1] + 0.001,
+                 (KNEE_ROWS[0] - z) / (KNEE_ROWS[0] - KNEE_ROWS[-1]))
+
+
+def _phase(side, k):
+    return (1.3 + 2.1 * k) if side > 0 else (4.0 + 1.7 * k)
+
+
+def _bunch_ring(z, r, w, k, side):
+    """One row of the scrunched hem: crest weight w (+ crest, - valley), tilted and uneven around the leg."""
+    pts = []
+    ph = _phase(side, k)
+    for j in range(NL):
+        th = TAU * j / NL
+        mod = 0.50 + 0.60 * math.cos(th - ph) + 0.25 * math.cos(2 * th + 1.7 * ph) + 0.10 * math.cos(5 * th + ph)
+        amp = BUNCH_AMP * w * (max(mod, 0.05) if w > 0 else 1.0)
+        dz = (0.0065 * math.sin(th + 0.7 * ph) + 0.0020 * math.sin(3 * th + 2.3 * ph)) * (1.0 if w > 0 else 0.7)
+        p = trouser_pt(z, r + amp, th, side, folds=False, dz=dz)
+        pts.append(V((p.x * side, p.y, p.z)))
+    return pts
+
+
+def _tube_z(z, psi):
+    """Crumple rows sit between the cuff band bottom and the boot collar, which rises over the instep: rows
+    are squeezed into the shorter gap at the front instead of crossing the collar."""
+    top, f = 0.150, _front_w(psi)
+    zc = COLLAR_Z + COLLAR_ARCH * f
+    if z >= top:
+        return z
+    if z >= COLLAR_Z:
+        return top - (top - z) * (top - zc) / (top - COLLAR_Z)
+    return z + COLLAR_ARCH * f
+
+
+def tube_row(z, d, w, k, side):
+    """Local points of one lower-leg row (NL columns at world angles), crumples applied."""
+    out = []
+    ph = _phase(side, k + 5)
+    for j in range(NL):
+        th = TAU * j / NL
+        a = th - PHI
+        f = _front_w(a)
+        dd = d
+        zz = _tube_z(z, a)
+        if w:
+            ph = _phase(side, 7 + _CRUMPLE_GROUP.get(round(z, 4), 0))    # rows of one fold share a phase
+            mod = 0.50 + 0.50 * math.cos(a - ph) + 0.22 * math.cos(2 * a + 1.7 * ph) + 0.08 * math.cos(5 * a + ph)
+            dd += CRUMPLE_AMP * w * (min(max(mod, 0.08), 1.1) if w > 0 else 1.0) * (1.0 - 0.55 * f)
+            zz += (0.0030 * math.sin(a + 0.8 * ph) + 0.0012 * math.sin(3 * a + 2.3 * ph)) * (1.0 - f)
+        out.append(tube_pt(zz, a, dd))
+    return out
+
+
+def lower_rows_local(side):
+    """All tube rows (local coords), shared by the trouser mesh and the straps' surface queries."""
+    return [tube_row(z, d, w, k, side) for k, (z, d, w) in enumerate(TUBE_ROWS)]
 
 
 def build_knee_and_blouse(side, top_ring):
-    """Knee band (support) + bloused lower leg (main) for one side.  Both share their boundary ring."""
+    """Knee band (support) + lower trouser leg (main) for one side.  Both share their boundary ring."""
     knee = [top_ring] + [_leg_ring(z, side, r=_knee_r(z)) for z in KNEE_ROWS[1:]]
     sfx = "L" if side > 0 else "R"
     knee_ob = lib.lofted("trouser_knee_" + sfx, knee, topo="support", sharp_angle=75)
     rings = [knee[-1]]
-    for z, r, sag in BLOUSE_ROWS:
-        rings.append(_leg_ring(z, side, r=r, sag=sag))
-    for z, d, sw in TUCK_ROWS:
+    for z, r in LOWER_ROWS:
+        rings.append(_leg_ring(z, side, r=r))
+    for k, (z, r, w) in enumerate(BUNCH_ROWS):
+        rings.append(_bunch_ring(z, r, w, k, side))
+    for row in lower_rows_local(side):
         ring = []
-        for j in range(NL):
-            th = TAU * j / NL
-            p = boot_rel_pt(z, d, th)
-            p.z -= sw * SAG * _sag(th, side, 0.2935)
-            ring.append(V((p.x * side, p.y, p.z)))
+        for p in row:
+            q = to_world(p)
+            ring.append(V((q.x * side, q.y, q.z)))
         rings.append(ring)
-    blouse = lib.lofted("trouser_blouse_" + sfx, rings, topo="main", sharp_angle=75)
+    blouse = lib.lofted("trouser_blouse_" + sfx, rings, topo="main", sharp_angle=60)
     return [knee_ob, blouse]
+
+
+# ================================================================== SOLE + HEEL (local frame)
+HB_FRONT = 0.004          # front face of the heel block (local y)
+HB_H = 0.040              # heel block height
+Y_BALL = -0.088           # sole leaves the ground behind the ball of the foot (arch gap starts)
+Y_SPRING = -0.172         # toe spring starts here ...
+TOE_SPRING = 0.008        # ... and lifts the tip this much
+SOLE_LIP = 0.0035         # protruding lip at the top of the sole plate
+
+
+def sole_bot(y):
+    if y >= HB_FRONT:
+        return HB_H - 0.001
+    if y >= Y_BALL:
+        return (HB_H - 0.001) * _sstep((y - Y_BALL) / (HB_FRONT - Y_BALL))
+    if y <= Y_SPRING:
+        t = (Y_SPRING - y) / (Y_SPRING - Y_TOE)
+        return TOE_SPRING * t * t
+    return 0.0
+
+
+def sole_t(y):
+    return _lerp(0.0145, 0.0130, _sstep((y - Y_BALL) / (HB_FRONT - Y_BALL)))
+
+
+def sole_top(y):
+    return sole_bot(y) + sole_t(y)
+
+
+def zb_up(y):
+    """Bottom edge of the boot upper (sunk 2 mm into the sole plate)."""
+    return sole_top(y) - 0.002
+
+
+def sole_w(y):
+    """Half width of the sole plate (without its lip) along the foot."""
+    return _interp([(-0.220, 0.046), (-0.200, 0.0525), (-0.180, 0.0570), (-0.150, 0.0595), (-0.120, 0.0600),
+                    (-0.095, 0.0585), (-0.070, 0.0545), (-0.045, 0.0505), (-0.020, 0.0490), (0.010, 0.0495),
+                    (0.050, 0.0500), (0.090, 0.0485)], y)
+
+
+def _ends(y_back, r_back, p_back, y_front, r_front, p_front, mids, wfun):
+    """(y, half width) sections from the back tip to the front tip with superellipse-rounded ends."""
+    st = []
+    yc = y_back - r_back
+    for s in (0.96, 0.85, 0.66, 0.38):
+        st.append((yc + r_back * s, wfun(yc) * (1 - s ** p_back) ** (1 / p_back)))
+    st += [(y, wfun(y)) for y in mids]
+    yc = y_front + r_front
+    for s in (0.38, 0.66, 0.85, 0.96):
+        st.append((yc - r_front * s, wfun(yc) * (1 - s ** p_front) ** (1 / p_front)))
+    return st
+
+
+def _cap(mb, r, top, right, bottom, left, sign, depth):
+    mb.coons([r[i] for i in top], [r[i] for i in right], [r[i] for i in bottom], [r[i] for i in left],
+             lambda u, v: V((0.0, sign * depth * (1 - (2 * u - 1) ** 2) ** 0.6 * (1 - (2 * v - 1) ** 2) ** 0.3, 0.0)))
+
+
+def build_sole():
+    """Thin sole plate: flat forefoot with a lip, rising through the arch onto the heel block."""
+    mb = MB()
+    rh, rt = 0.036, 0.034
+    mids = [Y_HEEL - rh, 0.030, HB_FRONT, -0.012, -0.028, -0.044, -0.060, -0.075, Y_BALL, -0.108, -0.130,
+            -0.150, -0.168, -0.184, Y_TOE + rt]
+    st = _ends(Y_HEEL, rh, 2.2, Y_TOE, rt, 2.8, mids, sole_w)
+    ch, lip = 0.0022, SOLE_LIP
+    rings = []
+    for y, w in st:
+        b, T = sole_bot(y), sole_t(y)
+        k1, k2 = 0.52 * T, 0.60 * T
+        r = [(-(w - ch), b), (0.0, b), (w - ch, b), (w, b + ch), (w, b + k1), (w + lip, b + k2),
+             (w + lip, b + T - ch), (w + lip - ch, b + T), (0.0, b + T), (-(w + lip - ch), b + T),
+             (-(w + lip), b + T - ch), (-(w + lip), b + k2), (-w, b + k1), (-w, b + ch)]
+        rings.append(mb.add([V((x, y, z)) for x, z in r]))
+    for a, b in zip(rings, rings[1:]):
+        mb.strip(a, b, closed=True)
+    caps = ((9, 8, 7), (7, 6, 5, 4, 3, 2), (0, 1, 2), (9, 10, 11, 12, 13, 0))
+    _cap(mb, rings[0], *caps, 1.0, Y_HEEL - st[0][0])
+    _cap(mb, rings[-1], *caps, -1.0, st[-1][0] - Y_TOE)
+    return mb
+
+
+def build_heel():
+    """Tall block heel under the back of the sole plate, flared top lip, sloped front face."""
+    mb = MB()
+    rh = 0.032
+    yb = Y_HEEL - 0.004
+
+    def hw(y):
+        return sole_w(y) - 0.0045
+    mids = [yb - rh, 0.030, 0.016, HB_FRONT]
+    st = _ends(yb, rh, 2.3, HB_FRONT - 0.001, 0.0, 2.0, mids, hw)[:-4]     # flat front: no front rounding
+    H, ch, fl = HB_H, 0.002, 0.0025
+    rings = []
+    for i, (y, w) in enumerate(st):
+        r = [(-(w - ch), 0.0), (0.0, 0.0), (w - ch, 0.0), (w, ch), (w, H - 0.007), (w + fl, H - 0.0045),
+             (w + fl, H), (0.0, H), (-(w + fl), H), (-(w + fl), H - 0.0045), (-w, H - 0.007), (-w, ch)]
+        slope = 0.006 if i == len(st) - 1 else 0.0              # front face leans back at the bottom
+        rings.append(mb.add([V((x, y + slope * (1 - z / H), z)) for x, z in r]))
+    for a, b in zip(rings, rings[1:]):
+        mb.strip(a, b, closed=True)
+    caps = ((8, 7, 6), (6, 5, 4, 3, 2), (0, 1, 2), (8, 9, 10, 11, 0))
+    _cap(mb, rings[0], *caps, 1.0, yb - st[0][0])
+    _cap(mb, rings[-1], *caps, -1.0, 0.0)
+    return mb
 
 
 # ================================================================== BOOT UPPER (left, local frame)
@@ -367,59 +563,58 @@ NS, PW, PR = 24, 8, 4            # shaft columns / foot patch width / foot patch
 JP0 = 3 * NS // 4 - PW // 2      # patch columns JP0 .. JP1, centred on the front (-y)
 JP1 = JP0 + PW
 NF = 2 * (PW + PR)               # foot ring vertex count
-T = BOOT_TOP
 
 # shaft radii vs z: side (x), back (+y), front (-y); front superellipse power (boxy where the foot joins)
-_RS = [(ZB, 0.0540), (0.050, 0.0555), (0.075, 0.0560), (0.100, 0.0540), (0.135, 0.0400)]
-_RB = [(ZB, 0.0860), (0.050, 0.0860), (0.075, 0.0800), (0.100, 0.0700), (0.125, 0.0620), (0.160, 0.0500)]
-_RF = [(ZB, 0.0640), (0.110, 0.0620), (0.150, 0.0500)]
-_PF = [(ZB, 4.5), (0.100, 3.4), (0.125, 2.6), (0.150, 2.0)]
+_RS = [(0.040, 0.0470), (0.070, 0.0500), (0.095, 0.0520)]
+_RB = [(0.040, 0.0620), (0.070, 0.0610), (0.090, 0.0600), (0.110, 0.0560)]
+_RF = [(0.040, 0.0500), (0.100, 0.0520)]
+_PF = [(0.040, 4.0), (0.090, 3.0), (0.125, 2.2)]
+COLLAR_EASE = (0.0125, 0.0160, 0.0110)
 
 
 def rad_s(z):
-    """Shaft half width (local x): heel-counter table at the foot, slim bare leg + ease above it."""
-    return max(_interp(_RS, z), _bare_r(z) + SHAFT_EASE[0])
+    return max(_interp(_RS, z), _bare_r(z) + COLLAR_EASE[0])
 
 
 def rad_b(z):
-    return max(_interp(_RB, z), _bare_r(z) + SHAFT_EASE[1])
+    return max(_interp(_RB, z), _bare_r(z) + COLLAR_EASE[1])
 
 
 def rad_f(z):
-    return max(_interp(_RF, z), _bare_r(z) + SHAFT_EASE[2])
+    return max(_interp(_RF, z), _bare_r(z) + COLLAR_EASE[2])
 
-# full shaft rings: (z at the back, how far the front arches up over the instep crease)
-SHAFT_ROWS = [(0.206, 0.0), (0.189, 0.0), (0.172, 0.004), (0.156, 0.012), (0.141, 0.022), (0.126, 0.034)]
-HEEL_Z = [0.100, 0.076, 0.051, ZB]          # PR rows below the last full ring (heel counter)
-# rolled cuff on top of the shaft: (radial offset, z), outside-bottom -> over the rim -> inner lip
-CUFF = [(0.0010, T - 0.016), (0.0016, T - 0.004), (0.0008, T + 0.0015), (-0.0012, T + 0.0025),
-        (-0.0030, T - 0.003), (-0.0030, T - 0.015)]
 
-# foot cross-sections, from the ankle patch (0) to the toe (9):
+# full shaft rings below the collar: (z at the back, rise at the front)
+SHAFT_ROWS = [(0.1030, 0.017), (0.0920, 0.024)]
+# rolled collar: (radial offset, dz from the collar line), outside-bottom -> over the rim -> inner lip
+CUFF = [(0.0012, -0.0085), (0.0018, -0.0030), (0.0009, 0.0015), (-0.0012, 0.0025), (-0.0030, -0.0030),
+        (-0.0030, -0.0130)]
+
+# foot cross-sections, ankle patch (0) -> toe (10):
 #   y of the sole line, (y, z) of the top centre line, max half width, half width at the sole, corner angle
 FOOT = [
-    (-0.048, -0.050, 0.1600, 0.0540, 0.0530, 44.0),
-    (-0.066, -0.070, 0.1360, 0.0620, 0.0600, 46.0),
-    (-0.084, -0.089, 0.1280, 0.0690, 0.0670, 48.0),
-    (-0.102, -0.107, 0.1185, 0.0750, 0.0730, 50.0),
-    (-0.120, -0.124, 0.1150, 0.0790, 0.0770, 52.0),
-    (-0.137, -0.141, 0.1140, 0.0820, 0.0790, 53.0),
-    (-0.153, -0.157, 0.1120, 0.0830, 0.0800, 54.0),
-    (-0.167, -0.170, 0.1090, 0.0815, 0.0785, 55.0),
-    (-0.178, -0.180, 0.1035, 0.0770, 0.0740, 56.0),
-    (-0.186, -0.187, 0.0935, 0.0670, 0.0640, 57.0),
+    (-0.050, -0.054, 0.1170, 0.0500, 0.0490, 44.0),
+    (-0.066, -0.070, 0.1090, 0.0530, 0.0520, 46.0),
+    (-0.085, -0.088, 0.0990, 0.0550, 0.0540, 48.0),
+    (-0.105, -0.107, 0.0910, 0.0565, 0.0555, 50.0),
+    (-0.125, -0.127, 0.0830, 0.0575, 0.0565, 52.0),
+    (-0.144, -0.146, 0.0770, 0.0575, 0.0568, 54.0),
+    (-0.162, -0.164, 0.0730, 0.0570, 0.0562, 56.0),
+    (-0.179, -0.181, 0.0690, 0.0555, 0.0548, 58.0),
+    (-0.194, -0.196, 0.0650, 0.0525, 0.0518, 60.0),
+    (-0.206, -0.208, 0.0600, 0.0485, 0.0478, 62.0),
+    (-0.215, -0.216, 0.0540, 0.0430, 0.0425, 64.0),
 ]
-TOE_STEP = 0.0028                 # toe cap leather sits this far proud -> seam line
-FOOT_US = [(1, 0), (2, 0), (3, 0), (4, 0), (4.86, 0), (4.97, 1), (6, 1), (7, 1), (8, 1), (9, 1)]
-TOE_BULGE = 0.0085
+TOE_STEP = 0.0030                 # toe cap leather sits this far proud -> seam step across the toe box
+FOOT_US = [(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (5.55, 0), (5.66, 1), (6.5, 1), (7.5, 1), (8.5, 1),
+           (9.3, 1), (10, 1)]
+TOE_BULGE = 0.0105
 
 
 def shaft_pt(zb, arch, j, dr=0.0):
     psi = TAU * j / NS
     c, s = math.cos(psi), math.sin(psi)
-    d = abs(math.degrees(psi) - 270.0)
-    f = math.cos(math.radians(90.0 * d / 80.0)) ** 2 if d < 80.0 else 0.0
-    z = zb + arch * f
+    z = zb + arch * _front_w(psi)
     sx, sy = shaft_axis(z)
     rs = rad_s(z) + dr
     if s >= 0:
@@ -430,23 +625,34 @@ def shaft_pt(zb, arch, j, dr=0.0):
 
 def dome_ring(u, step=0):
     yb, yt, zt, W, Wb, phc = _catmull(FOOT, u)
+    zb = zb_up(yb)
     phc = math.radians(phc)
     if step:
         W += TOE_STEP
         Wb += TOE_STEP * 0.6
         zt += TOE_STEP
-    e = 2.0 / 2.6
+    e = 2.0 / 3.4
 
     def pt(phi):
         c, sn = math.cos(phi), math.sin(phi)
         h = abs(sn) ** e
         xl = math.copysign(abs(c) ** e * W - (W - Wb) * (1 - h) ** 3, c)
-        return V((xl, yb + (yt - yb) * h, ZB + (zt - ZB) * h))
+        return V((xl, yb + (yt - yb) * h, zb + (zt - zb) * h))
     pts = [pt(math.pi - phc - (math.pi - 2 * phc) * q / PW) for q in range(PW + 1)]       # top, inner -> outer
     pts += [pt(phc * (1 - k / PR)) for k in range(1, PR + 1)]                             # outer side, down
-    pts += [V((Wb * (1 - 2 * k / PW), yb, ZB)) for k in range(1, PW + 1)]                 # sole line, outer -> inner
+    pts += [V((Wb * (1 - 2 * k / PW), yb, zb)) for k in range(1, PW + 1)]                 # sole line, outer -> inner
     pts += [pt(math.pi - phc * k / PR) for k in range(1, PR)]                             # inner side, up
     return pts
+
+
+def _heel_pt(j, frac):
+    """Point of the heel rows below the last full shaft ring: frac 0 (ring) -> 1 (sole line)."""
+    z0 = SHAFT_ROWS[-1][0] + SHAFT_ROWS[-1][1] * _front_w(TAU * j / NS)
+    z = _lerp(z0, 0.05, frac)
+    for _ in range(3):
+        p = shaft_pt(z, 0.0, j)
+        z = _lerp(z0, zb_up(p.y), frac)
+    return shaft_pt(z, 0.0, j)
 
 
 def build_upper():
@@ -454,8 +660,8 @@ def build_upper():
     idx = {}
     itop = len(SHAFT_ROWS) - 1
     cuff = []
-    for dr, z in reversed(CUFF):
-        cuff.append(mb.add([shaft_pt(z, 0.0, j, dr) for j in range(NS)]))
+    for dr, dz in reversed(CUFF):
+        cuff.append(mb.add([shaft_pt(COLLAR_Z + dz, COLLAR_ARCH, j, dr) for j in range(NS)]))
     for a, b in zip(cuff, cuff[1:]):
         mb.strip(a, b, closed=True)
     prev = cuff[-1]
@@ -467,9 +673,9 @@ def build_upper():
         prev = ring
     heel_cols = [j % NS for j in range(JP1, JP0 + NS + 1)]          # JP1 .. around the back .. JP0
     nr = itop + PR
-    for k, z in enumerate(HEEL_Z):
-        i = itop + 1 + k
-        ids = mb.add([shaft_pt(z, 0.0, j) for j in heel_cols])
+    for k in range(1, PR + 1):
+        i = itop + k
+        ids = mb.add([_heel_pt(j, k / PR) for j in heel_cols])
         for j, v in zip(heel_cols, ids):
             idx[(i, j)] = v
     for i in range(itop, nr):
@@ -477,7 +683,9 @@ def build_upper():
             mb.quad(idx[(i, a)], idx[(i, b)], idx[(i + 1, b)], idx[(i + 1, a)])
     pa, pb = mb.v[idx[(nr, JP0)]], mb.v[idx[(nr, JP1)]]
     for j in range(JP0 + 1, JP1):
-        idx[(nr, j)] = mb.add([pa.lerp(pb, (j - JP0) / PW)])[0]
+        q = pa.lerp(pb, (j - JP0) / PW)
+        q.z = zb_up(q.y)
+        idx[(nr, j)] = mb.add([q])[0]
     # foot: ring 0 = boundary of the front patch, then dome rings to the toe
     ring0 = ([idx[(itop, j)] for j in range(JP0, JP1 + 1)]
              + [idx[(i, JP1)] for i in range(itop + 1, nr + 1)]
@@ -488,7 +696,7 @@ def build_upper():
     corr = [mb.v[a] - b for a, b in zip(ring0, d0)]
     prev = ring0
     for u, step in FOOT_US:
-        fall = max(0.0, 1.0 - u / 3.0) ** 2
+        fall = max(0.0, 1.0 - u / 2.5) ** 2
         ring = mb.add([p + c * fall for p, c in zip(dome_ring(u, step), corr)])
         mb.strip(prev, ring, closed=True)
         prev = ring
@@ -497,8 +705,8 @@ def build_upper():
     bottom = list(reversed(prev[PW + PR:2 * PW + PR + 1]))
     left = [prev[0]] + list(reversed(prev[2 * PW + PR:NF]))
 
-    def bulge(u, v):
-        return V((0.0, -TOE_BULGE * (1 - (2 * u - 1) ** 2) ** 0.55 * (1 - (2 * v - 1) ** 2) ** 0.55, 0.0))
+    def bulge(u, v):      # squared toe: flat-ish front, rounded only near the edges
+        return V((0.0, -TOE_BULGE * (1 - abs(2 * u - 1) ** 3.0) ** 0.5 * (1 - abs(2 * v - 1) ** 2.5) ** 0.5, 0.0))
     mb.coons(top, right, bottom, left, bulge)
 
     def col(j):
@@ -511,58 +719,7 @@ def build_upper():
     return mb
 
 
-# ================================================================== SOLE (local frame)
-OUT_Z = 0.016             # top of the outsole (a welt band sits above it)
-NOTCH = 0.011             # arch notch height between the heel block and the forefoot
-
-
-def sole_w(y):
-    """Half width of the sole along the foot: follows the upper's footprint + ~6 mm, waisted at the arch."""
-    return _interp([(-0.150, 0.0860), (-0.120, 0.0850), (-0.090, 0.0800), (-0.060, 0.0700), (-0.035, 0.0610),
-                    (-0.010, 0.0590), (0.020, 0.0605), (0.060, 0.0610), (0.080, 0.0600)], y)
-
-
-def _sole_sections():
-    """(y, half width, bottom z) cross-sections from heel to toe: rounded heel, heel block, arch notch,
-    forefoot, rounded toe."""
-    rh, rt = 0.040, 0.054
-    yh, yt = Y_HEEL - rh, Y_TOE + rt
-    st = [(yh + rh * math.sin(math.radians(a)), sole_w(yh) * math.cos(math.radians(a)) ** 0.8, 0.0)
-          for a in (76, 60, 42, 22)]
-    st += [(yh, sole_w(yh), 0.0), (0.040, sole_w(0.040), 0.0), (0.033, sole_w(0.033), 0.0),
-           (0.029, sole_w(0.029), NOTCH), (-0.026, sole_w(-0.026), NOTCH), (-0.036, sole_w(-0.036), 0.0)]
-    st += [(y, sole_w(y), 0.0) for y in (-0.066, -0.096, -0.124, yt)]
-    st += [(yt - rt * math.sin(math.radians(a)), sole_w(yt) * math.cos(math.radians(a)) ** 0.8, 0.0)
-           for a in (22, 42, 60, 76)]
-    return st
-
-
-def build_sole():
-    mb = MB()
-    ch = 0.0025
-    rings = []
-    st = _sole_sections()
-    for y, w, zb in st:
-        r = [(-(w - ch), zb), (0.0, zb), (w - ch, zb)]
-        r += [(w, zb + ch), (w, OUT_Z), (w - 0.0022, OUT_Z + 0.0022), (w + 0.0012, OUT_Z + 0.0045),
-              (w + 0.0012, SOLE_T - 0.002)]
-        r += [(w - 0.001, SOLE_T), (0.0, SOLE_T), (-(w - 0.001), SOLE_T)]
-        r += [(-(w + 0.0012), SOLE_T - 0.002), (-(w + 0.0012), OUT_Z + 0.0045), (-(w - 0.0022), OUT_Z + 0.0022),
-              (-w, OUT_Z), (-w, zb + ch)]
-        rings.append(mb.add([V((x, y, z)) for x, z in r]))
-    for a, b in zip(rings, rings[1:]):
-        mb.strip(a, b, closed=True)
-
-    def cap(r, sign, depth):
-        mb.coons([r[10], r[9], r[8]], [r[8], r[7], r[6], r[5], r[4], r[3], r[2]],
-                 [r[0], r[1], r[2]], [r[10], r[11], r[12], r[13], r[14], r[15], r[0]],
-                 lambda u, v: V((0.0, sign * depth * (1 - (2 * u - 1) ** 2) ** 0.6, 0.0)))
-    cap(rings[0], 1.0, Y_HEEL - st[0][0])
-    cap(rings[-1], -1.0, st[-1][0] - Y_TOE)
-    return mb
-
-
-# ================================================================== STRAPS / HARDWARE
+# ================================================================== surface helpers
 def _bvh(mbs):
     v, f = [], []
     for m in mbs:
@@ -572,29 +729,14 @@ def _bvh(mbs):
     return BVHTree.FromPolygons(v, f)
 
 
-def ring_on(bvh, c, z, angles):
-    """Horizontal ring of surface points around local axis point c at height z (ray cast from outside)."""
-    out = []
-    for a in angles:
-        u = V((math.cos(a), math.sin(a), 0.0))
-        o = V((c[0], c[1], z))
-        hit = bvh.ray_cast(o + u * 0.4, -u)
-        loc, n = (hit[0], hit[1]) if hit[0] is not None else (o + u * 0.06, u)
-        n = V((n.x, n.y, 0.0)).normalized() if abs(n.z) < 0.9 else u
-        if n.dot(u) < 0:                              # BVH normals follow the (unrecalculated) winding
-            n = -n
-        out.append((loc, n))
-    return out
-
-
 def _core(p):
     """Foot / shaft 'core' point used to aim rays at the boot from outside."""
-    w = _sstep((p.z - 0.12) / 0.05)
+    w = _sstep((p.z - 0.085) / 0.050)
     sx, sy = shaft_axis(p.z)
-    return V((0.0, p.y, 0.055)).lerp(V((sx, sy, p.z)), w)
+    return V((0.0, p.y, 0.032)).lerp(V((sx, sy, p.z)), w)
 
 
-def _surf_normal(bvh, p, d, r=0.010):
+def _surf_normal(bvh, p, d, r=0.008):
     """Averaged surface normal around p (5 parallel rays along -d) -> smooth, outward."""
     e1 = d.orthogonal().normalized()
     e2 = d.cross(e1)
@@ -621,10 +763,11 @@ def path_frames(bvh, pts, subdiv=3):
             for i, (q, _n) in enumerate(raw)]
 
 
-def band(mb, bvh, frames, width, thick, closed=False, clear=0.0007):
+def band(mb, bvh, frames, width, thick, closed=False, clear=0.0007, bevel=0.0):
     """Strap / panel with thickness that conforms to the surface across its width as well as along it:
     each section has 3 bottom verts (edge, middle, edge), each lifted just clear of the surface (checked
     with extra rays between them) and smoothed along the strap, so edges never cut into the shell.
+    bevel > 0 chamfers the top edges (8-vertex sections) for a crisp hard-surface read.
     Returns per-section (centre on the top face, along, across, normal) for placing hardware."""
     n_f = len(frames)
     hw = width / 2
@@ -641,7 +784,7 @@ def band(mb, bvh, frames, width, thick, closed=False, clear=0.0007):
 
     def height(q, nn):
         hit = bvh.ray_cast(q + nn * 0.04, -nn)
-        return (0.04 - hit[3]) if hit[0] is not None else -1.0
+        return (0.04 - hit[3]) if hit[0] is not None else 0.0
     lifts = []
     for p, t, sx, nn in sec:
         h = [height(p + sx * (hw * f), nn) + clear for f in (-1.0, -0.5, 0.0, 0.5, 1.0)]
@@ -662,14 +805,23 @@ def band(mb, bvh, frames, width, thick, closed=False, clear=0.0007):
     rings, out = [], []
     for (p, t, sx, nn), L in zip(sec, lifts):
         bl, bm, br = p - sx * hw + nn * L[0], p + nn * L[1], p + sx * hw + nn * L[2]
-        rings.append(mb.add([bl, bm, br, br + nn * thick, bm + nn * thick, bl + nn * thick]))
+        if bevel:
+            rings.append(mb.add([bl, bm, br, br + nn * (thick - bevel), br - sx * bevel + nn * thick,
+                                 bm + nn * thick, bl + sx * bevel + nn * thick, bl + nn * (thick - bevel)]))
+        else:
+            rings.append(mb.add([bl, bm, br, br + nn * thick, bm + nn * thick, bl + nn * thick]))
         out.append((bm + nn * thick, t, sx, nn))
     for a, c in zip(rings, rings[1:] + ([rings[0]] if closed else [])):
         mb.strip(a, c, closed=True)
     if not closed:
         for r in (rings[0], rings[-1]):
-            mb.quad(r[0], r[1], r[4], r[5])
-            mb.quad(r[1], r[2], r[3], r[4])
+            if bevel:
+                mb.quad(r[7], r[0], r[1], r[6])
+                mb.quad(r[1], r[2], r[5], r[6])
+                mb.quad(r[2], r[3], r[4], r[5])
+            else:
+                mb.quad(r[0], r[1], r[4], r[5])
+                mb.quad(r[1], r[2], r[3], r[4])
     return out
 
 
@@ -700,59 +852,106 @@ def buckle(mb, o, t, b, n, lt, lb, bar=0.0050, h=0.0045):
     mb.quad(*c)
 
 
-def build_straps(upper):
-    """-> (straps MB [main], hardware MB [rigid])  -- all in the boot's local frame."""
+# ================================================================== HEEL COUNTER
+CT_TOP = 0.097            # top of the heel counter at the back (just under the collar roll)
+CT_SPAN = math.radians(78.0)
+NCT = 18
+
+
+def build_counter(bvh):
+    """Raised panel wrapping the back of the heel: its top edge sweeps down to the sole at both front ends
+    (rounded side outline), with a 5 mm raised rim along that edge."""
+    mb = MB()
+
+    def cast(z, psi):
+        sx, sy = shaft_axis(z)
+        u = V((math.cos(psi), math.sin(psi), 0.0))
+        o = V((sx, sy, z))
+        hit = bvh.ray_cast(o + u * 0.3, -u)
+        p = hit[0] if hit[0] is not None else o + u * 0.06
+        return p, _surf_normal(bvh, p, u, r=0.006)
+    grid = []
+    for c in range(NCT + 1):
+        t = -1.0 + 2.0 * c / NCT
+        psi = math.pi / 2 + t * CT_SPAN
+        p0, _ = cast(0.06, psi)
+        zb = zb_up(p0.y) + 0.0015
+        h = zb + max((CT_TOP - zb) * (1 - abs(t) ** 1.9) ** 0.65, 0.016)
+        span = h - zb
+        rim = 0.0070 * min(1.0, span / 0.03)
+        dome = 0.0030 * (1 - abs(t) ** 2)                    # domed at the back of the heel
+        rows = [(zb, 0.0045), (_lerp(zb, h - rim - 0.002, 0.40), 0.0050 + dome),
+                (_lerp(zb, h - rim - 0.002, 0.75), 0.0048 + dome * 0.8),
+                (h - rim - 0.0015, 0.0042), (h - rim, 0.0078), (h, 0.0078), (h, 0.0004)]
+        col = []
+        for z, off in rows:
+            p, n = cast(z, psi)
+            col.append(p + n * off)
+        grid.append(mb.add(col))
+    for a, b in zip(grid, grid[1:]):
+        mb.strip(a, b)
+    # end walls: drop the outer face of the first / last column onto the surface (row 5 lands on row 6)
+    for c in (0, NCT):
+        t = -1.0 + 2.0 * c / NCT
+        psi = math.pi / 2 + t * CT_SPAN
+        wall = []
+        for vi in grid[c][:5]:
+            q, n = cast(mb.v[vi].z, psi)
+            wall.append(q + n * 0.0004)
+        mb.strip(grid[c][:6], mb.add(wall) + [grid[c][6]])
+    return mb
+
+
+# ================================================================== STRAPS / CUFF / HARDWARE
+# two wide flat straps over the instep, diagonal (forward on top, sweeping back-down on the outer side to
+# the heel counter's front edge, straight down the inner side to the welt); the rear one lies on top
+STRAP_A = [(-0.061, -0.128, 0.020), (-0.057, -0.123, 0.050), (-0.040, -0.114, 0.080), (-0.012, -0.104, 0.094),
+           (0.018, -0.092, 0.092), (0.042, -0.072, 0.082), (0.055, -0.046, 0.066), (0.057, -0.020, 0.056),
+           (0.054, -0.002, 0.050)]
+STRAP_B = [(-0.057, -0.094, 0.022), (-0.053, -0.090, 0.055), (-0.040, -0.084, 0.088), (-0.014, -0.077, 0.106),
+           (0.016, -0.067, 0.108), (0.040, -0.047, 0.098), (0.054, -0.019, 0.084), (0.056, 0.008, 0.074),
+           (0.052, 0.030, 0.068)]
+
+
+def build_straps(upper, counter, side_rows):
+    """-> (straps MB [main], hardware MB [rigid]) -- all in the boot's local frame."""
     sm, hw = MB(), MB()
-    # ---- tongue / lace panel down the instep, from under the cuff strap to the toe-cap seam
-    bvh = _bvh([upper])
-    tongue_pts = [(0.0, -0.040, 0.166), (0.0, -0.052, 0.148), (0.0, -0.068, 0.132), (0.0, -0.088, 0.118),
-                  (0.0, -0.108, 0.109), (0.0, -0.128, 0.104)]
-    tf = path_frames(bvh, tongue_pts, subdiv=2)
-    tongue = band(sm, bvh, tf, 0.044, 0.0030)
-    bvh = _bvh([upper, sm])
-    for i in (2, 4):
-        p, t, b, n = tongue[i]
-        lf = path_frames(bvh, [p - b * 0.026, p, p + b * 0.026], subdiv=2)
-        band(sm, bvh, lf, 0.006, 0.0022)
-    # ---- ankle / instep strap: from the outer ankle (under the cuff strap) diagonally over the instep to the
-    #      inner welt, with a square buckle on the outer side
-    bvh = _bvh([upper, sm])
-    ip = [(0.056, 0.000, 0.146), (0.056, -0.026, 0.136), (0.048, -0.054, 0.127), (0.025, -0.076, 0.118),
-          (-0.004, -0.090, 0.110), (-0.034, -0.101, 0.096), (-0.056, -0.108, 0.075), (-0.068, -0.112, 0.052),
-          (-0.072, -0.114, 0.030)]
-    inst = band(sm, bvh, path_frames(bvh, ip, subdiv=3), 0.036, 0.0040)
-    p, t, b, n = inst[4]
-    buckle(hw, p, t, b, n, lt=0.018, lb=0.023)
-    # ---- wide top cuff strap round the boot (+ tail lying on it, punched eyelets, rivet)
-    bvh = _bvh([upper, sm])
-    zs = 0.5 * (CUFF_STRAP_Z[0] + CUFF_STRAP_Z[1])
-    ws = CUFF_STRAP_Z[1] - CUFF_STRAP_Z[0]
-    ax = shaft_axis(zs)
-    cuff = band(sm, bvh, ring_on(bvh, ax, zs, [TAU * k / NS + 1e-4 for k in range(NS)]), ws, 0.0055,
-                closed=True, clear=0.0015)
-    a_b = math.radians(-68.0)                    # buckle on the front-outer side (ref FRONT)
-    bvh = _bvh([upper, sm])
-    tail_a = [a_b - math.radians(d) for d in (12, 20, 28, 36, 44, 52, 60, 67)]
-    tail = band(sm, bvh, ring_on(bvh, ax, zs, tail_a), ws * 0.84, 0.0028)
-    p, t, b, n = band(MB(), bvh, ring_on(bvh, ax, zs, [a_b - 0.06, a_b, a_b + 0.06]), ws, 0.0)[1]
-    buckle(hw, p + n * 0.0030, -t, b, n, lt=0.021, lb=ws * 0.5 + 0.005)
-    for k in (3, 4, 5):
-        p, t, b, n = tail[k]
-        hw_r = lib.rivet("eyelet", radius=0.0036, height=0.0011, n=8, loc=p - n * 0.0003, normal=n)
-        _absorb(hw, hw_r)
-    p, t, b, n = cuff[(round(math.radians(20.0) / (TAU / NS))) % NS]
-    _absorb(hw, lib.rivet("rivet", radius=0.0048, height=0.0020, n=8, loc=p - n * 0.0003, normal=n))
+    bvh = _bvh([upper, counter])
+    a = band(sm, bvh, path_frames(bvh, STRAP_A, subdiv=2), 0.040, 0.0058, bevel=0.0012)
+    bvh = _bvh([upper, counter, sm])
+    b = band(sm, bvh, path_frames(bvh, STRAP_B, subdiv=2), 0.046, 0.0062, bevel=0.0012)
+    # stepped end tabs on the outer ends (FBX: small square plates where the straps end)
+    for secs, wd in ((a, 0.030), (b, 0.034)):
+        bvh = _bvh([upper, counter, sm])
+        tab = [secs[k][0] - secs[k][3] * 0.002 for k in (-7, -5, -3)]
+        band(sm, bvh, path_frames(bvh, tab, subdiv=1), wd, 0.0034, bevel=0.0008)
+    # wrapped ankle cuff: closed crisp band on the slim lower leg, square buckle on the outer side
+    z0, z1 = CUFF_Z
+    d_in, d_out, ch = 0.0015, 0.0064, 0.0013
+    prof = [(z0, d_in), (z0, d_out - ch), (z0 + ch, d_out), (z1 - ch, d_out), (z1, d_out - ch), (z1, d_in)]
+    rows = [sm.add([tube_pt(z, TAU * k / NS, d) for k in range(NS)]) for z, d in prof]
+    for r0, r1 in zip(rows, rows[1:] + [rows[0]]):
+        sm.strip(r0, r1, closed=True)
+    zc = 0.5 * (z0 + z1)
+    o = tube_pt(zc, 0.0, d_out)
+    buckle(hw, o, V((0.0, 1.0, 0.0)), V((0.0, 0.0, 1.0)), V((1.0, 0.0, 0.0)), lt=0.0195, lb=0.0215,
+           bar=0.0062, h=0.0052)
+    # vertical gaiter strip on the outer side, from the cuff up under the trouser hem
+    tm = MB()
+    prev = None
+    for row in side_rows[2:9]:
+        cur = tm.add(row)
+        if prev:
+            tm.strip(prev, cur, closed=True)
+        prev = cur
+    tb = _bvh([tm])
+    fr = []
+    for z in (0.196, 0.212, 0.228, 0.244, 0.258, 0.270):
+        p = tube_pt(z, 0.0, 0.0)
+        hit = tb.ray_cast(p + V((0.05, 0.0, 0.0)), V((-1.0, 0.0, 0.0)))
+        fr.append((hit[0] if hit[0] is not None else p, V((1.0, 0.0, 0.0))))
+    band(sm, tb, fr, 0.022, 0.0026, bevel=0.0007)
     return sm, hw
-
-
-def _absorb(mb, ob):
-    """Move a helper object's mesh into an MB and delete the object."""
-    off = len(mb.v)
-    mb.add([v.co.copy() for v in ob.data.vertices])
-    mb.f += [tuple(i + off for i in p.vertices) for p in ob.data.polygons]
-    me = ob.data
-    bpy.data.objects.remove(ob)
-    bpy.data.meshes.remove(me)
 
 
 # ================================================================== build
@@ -769,12 +968,15 @@ def build():
     for side in (1, -1):
         objs += build_knee_and_blouse(side, bottoms[side])
     upper = build_upper()
-    straps, hw = build_straps(upper)
-    left = [upper.obj("boot_upper_L", "main", sharp_angle=50),
-            build_sole().obj("boot_sole_L", "rigid", sharp_angle=30),
-            straps.obj("boot_straps_L", "main", sharp_angle=40),
-            hw.obj("boot_hardware_L", "rigid", sharp_angle=30)]
-    for o, sharp in zip(left, (50, 30, 40, 30)):
+    counter = build_counter(_bvh([upper]))
+    straps, hw = build_straps(upper, counter, lower_rows_local(1))
+    left = [(upper.obj("boot_upper_L", "main", sharp_angle=50), 50),
+            (counter.obj("boot_counter_L", "main", sharp_angle=40), 40),
+            (build_sole().obj("boot_sole_L", "rigid", sharp_angle=30), 30),
+            (build_heel().obj("boot_heel_L", "rigid", sharp_angle=30), 30),
+            (straps.obj("boot_straps_L", "main", sharp_angle=40), 40),
+            (hw.obj("boot_hardware_L", "rigid", sharp_angle=30), 30)]
+    for o, sharp in left:
         _to_world_ob(o, sharp)
-    objs += left + [lib.mirror_copy(o) for o in left]
+    objs += [o for o, _ in left] + [lib.mirror_copy(o) for o, _ in left]
     return objs

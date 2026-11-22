@@ -19,21 +19,27 @@ same weights and stay welded.  Skinning is dual-quaternion (volume preserving, n
 the Blender armature modifier gets the same weights with `use_deform_preserve_volume`, and the pose
 is applied by evaluating that modifier, so the exported file is a rig whose rest pose is the T-pose.
 
-Skin classes
-    arm     arms.py / cuffs.py objects: full arm chain.  Upper-arm weight rises from g(alpha) on the
-            armhole seam ring to 1 a little way down the sleeve.
-    torso   torso_coat objects: upper-arm weight g(alpha) on the armhole ring fading out into the coat
-            (far further under the arm than over the shoulder), clavicle weight over the shoulders.
-    static  everything else (head, skirt, belt, pouches, legs): 100 % torso bone.
-Both classes use the same g(alpha) and the same clavicle field, so the seam ring gets identical weights.
+Skin classes (from the object's "part" property, not its name)
+    arm     parts arms / cuffs: full arm chain.  Upper-arm weight rises from g(alpha) on the armhole
+            seam ring to 1 a little way down the sleeve (further on the outer/top side than underneath).
+    torso   part torso_coat: upper-arm weight g(alpha) on the armhole ring fading out into the coat
+            (further under the arm than over the shoulder), clavicle weight over the shoulders.
+    gear    part armor_gear: rigid islands; an island lying on top of the shoulder rides the epaulette
+            bone, one wrapping the upper arm outside the armhole rides the pauldron bone (armour_kind,
+            by centroid position), anything else takes the torso field at its centroid (belt etc. -> 0).
+    static  everything else (head, skirt, legs): 100 % torso bone.
+Arm and torso classes share g(alpha) and the clavicle field, so the seam ring gets identical weights.
 
-Rigid objects (topo "rigid") never bend: every connected island gets uniform weights (the field at the
-island's centroid) -> with dual-quaternion skinning that is an exact rigid transform.  The shoulder
-armour is split: strap + buttons -> epaulette bone, guard shell + rims + emblem + rivets -> pauldron.
+Rigid objects (topo "rigid", and all gear) never bend: every connected island gets uniform weights (the
+field at its centroid) -> with dual-quaternion skinning that is an exact rigid transform.
+
+Shoulder armour fit (_solve_armour): the guard rides the upper arm, lowered onto the raised sleeve as far
+as clearance allows and slid out along it just enough to clear the coat / collar / sleeve; the strap's
+collar end stays where the posed coat puts it and the strap tilts the least amount that clears the
+guard and coat.  Both are searched against the posed meshes, so reworked armour fits itself.
 """
 import math
 
-import bmesh
 import bpy
 import numpy as np
 from mathutils import Matrix, Quaternion, Vector as V
@@ -47,11 +53,10 @@ X, Y, Z = V((1.0, 0.0, 0.0)), V((0.0, 1.0, 0.0)), V((0.0, 0.0, 1.0))
 # ---------------------------------------------------------------- joints (left side, A-pose)
 J = S.SHOULDER.copy()
 E = S.ELBOW.copy()
-WR = A.WRIST.copy()                     # includes arms.WRIST_OFFSET (forearm angled forward)
+WR = getattr(A, "WRIST", S.WRIST).copy()   # includes arms.WRIST_OFFSET (forearm angled forward)
 D1 = (E - J).normalized()               # down the upper arm
 D2 = (WR - E).normalized()              # down the forearm
 LU, LF = (E - J).length, (WR - E).length
-CLAV0 = V((0.040, 0.000, 1.520))        # sterno-clavicular pivot
 
 # armhole seam ring frame (spec.armhole_ring)
 RC = S.ARMHOLE_CENTER.copy()
@@ -62,24 +67,23 @@ R0, R1 = S.ARMHOLE_R
 
 # ---------------------------------------------------------------- tunables
 P = dict(
-    clav_deg=7.0,          # clavicle elevation (shoulder rises)
+    clav_deg=12.0,         # clavicle elevation (shoulder rises) ...
+    clav_pivot=(0.100, 0.0, 1.555),   # ... about this point (near the epaulette strap's collar end)
     g_top=0.12,            # upper-arm weight on the armhole ring: top of the shoulder ...
-    g_pit=0.58,            # ... and in the armpit (cos blend in between)
+    g_pit=0.55,            # ... and in the armpit (cos blend in between)
     arm_len_top=0.13,      # sleeve: distance from the seam (along the arm) to full upper-arm weight, top
-    arm_len_pit=0.050,     # ... armpit
+    arm_len_pit=0.075,     # ... armpit
     coat_len_top=0.045,    # coat: distance from the seam to zero upper-arm weight over the shoulder
     coat_len_pit=0.100,    # ... under the arm
-    clav_x=(0.085, 0.215), # clavicle weight ramps in over this x range ...
+    clav_x=(0.100, 0.220), # clavicle weight ramps in over this x range ...
     clav_z=(1.36, 1.47),   # ... and this z range
     elbow_w=0.035,         # half width of the elbow blend (across the bisector plane)
     wrist=(-0.004, 0.026), # hand blend along the wrist plane normal, from the wrist pivot
     twist=(0.10, 0.95),    # forearm twist ramp (forearm parameter)
     twist_share=0.65,      # share of the forearm->hand twist carried by forearm_twist
-    strap_deg=10.0,        # extra tilt of the epaulette strap about its collar end
-    strap_lift=0.004,
-    guard_slide=0.028,     # guard slides this far out along the raised arm ...
-    guard_lift=0.004,      # ... and up
-    guard_deg=0.0,         # extra rotation of the guard about the posed shoulder (+ = tilts outer end up)
+    guard_drop_max=0.020,  # shoulder armour fit (_solve_armour): the guard may sit up to this much lower ...
+    guard_slide_min=0.0,   # ... and slides out along the arm at least this much
+    guard_gap=0.002,       # clearance kept between the guard and the sleeve / coat
 )
 
 
@@ -98,10 +102,10 @@ def _rt(q, pivot_from, pivot_to):
     return Matrix.Translation(pivot_to) @ q.to_matrix().to_4x4() @ Matrix.Translation(-pivot_from)
 
 
-# ---------------------------------------------------------------- hand frame (replicates arms.build_hand)
-def hand_frame():
-    """(O, w, b, d): wrist pivot, across the palm toward the thumb, back of the hand, along the hand."""
-    f = 1                                           # middle finger tip, as arms.build_hand computes it
+# ---------------------------------------------------------------- hand frame
+def _hand_frame_arms():
+    """Exact frame arms.build_hand uses (replicates its middle-finger tip + HAND_ALIGN swing)."""
+    f = 1
     g = math.radians(A.FINGER_FAN[f])
     fd = V((math.sin(g), 0.0, math.cos(g)))
     fu = V((math.cos(g), 0.0, -math.sin(g)))
@@ -128,6 +132,27 @@ def hand_frame():
     return O, q @ w, q @ b, q @ d
 
 
+def _hand_frame_fallback():
+    """Generic frame when arms.py no longer has those internals: along WRIST -> HAND_TIP, back of the
+    hand facing out (+X) turned HAND_TURN (default 25 deg) toward the front."""
+    tip = getattr(A, "HAND_TIP", S.HAND_TIP)
+    d = (tip - WR).normalized()
+    b = (X - d * d.x).normalized()
+    w = d.cross(b).normalized()
+    tr = math.radians(getattr(A, "HAND_TURN", 25.0))
+    b, w = b * math.cos(tr) + w * math.sin(tr), w * math.cos(tr) - b * math.sin(tr)
+    return WR - d * getattr(A, "HAND_RISE", 0.012), w, b, d
+
+
+def hand_frame():
+    """(O, w, b, d): wrist pivot, across the palm toward the thumb, back of the hand, along the hand."""
+    try:
+        return _hand_frame_arms()
+    except Exception as e:                     # arms.py internals changed -> generic frame
+        print(f"pose: hand frame fallback ({type(e).__name__}: {e})")
+        return _hand_frame_fallback()
+
+
 HO, HW, HB, HD = hand_frame()
 
 
@@ -138,17 +163,18 @@ class Bone:
         self.roll_axis, self.M = V(roll_axis), M        # M: rest -> posed, world space (4x4)
 
 
-def _guard_axis():
-    out = (X - D1 * D1.x).normalized()
-    return J + out * 0.095 - D1 * 0.01, J + out * 0.095 + D1 * 0.17
-
-
-def skeleton_left(pose="tpose"):
-    """Bones of the left side with their world-space deform matrices for `pose`."""
+def skeleton_left(pose="tpose", armour=None):
+    """Bones of the left side with their world-space deform matrices for `pose`.
+    armour: optional dict from _solve_armour (pivots, extents and offsets of the shoulder armour)."""
     if pose not in POSES:
         raise ValueError(f"unknown pose {pose!r}; known: {POSES}")
+    ar = dict(strap_pivot=V((0.140, 0.004, 1.594)), strap_pivot_posed=None, strap_tail=V((0.268, 0.004, 1.575)),
+              guard_head=J + (X - D1 * D1.x).normalized() * 0.095, guard_tail=None,
+              strap_deg=0.0, guard_slide=0.0, guard_lift=0.0)
+    ar.update(armour or {})
     I4 = Matrix.Identity(4)
-    Mc = _rt(Quaternion(-Y, math.radians(P["clav_deg"])), CLAV0, CLAV0)
+    C0 = V(P["clav_pivot"])
+    Mc = _rt(Quaternion(-Y, math.radians(P["clav_deg"])), C0, C0)
     J2 = Mc @ J
     Ru = _swing(D1, X)                                    # upper arm straight out (+X)
     Mu = _rt(Ru, J, J2)
@@ -164,32 +190,33 @@ def skeleton_left(pose="tpose"):
     qr = Rh @ Rf.inverted()
     tau = 2.0 * math.atan2(qr.x, qr.w)
     Mt = _rt(Quaternion(X, P["twist_share"] * tau) @ Rf, E, E2)
-    # shoulder armour
-    ps = V((0.140, 0.004, 1.5938))                          # strap underside at the collar end
-    Ms = Mc @ Matrix.Translation(Z * P["strap_lift"]) @ _rt(Quaternion(-Y, math.radians(P["strap_deg"])), ps, ps)
-    Mp = (Matrix.Translation(X * P["guard_slide"] + Z * P["guard_lift"])
-          @ _rt(Quaternion(-Y, math.radians(P["guard_deg"])), J2, J2) @ Mu)
-    g0, g1 = _guard_axis()
-    hand_tip = HO + HD * 0.10
+    # shoulder armour: the strap pivots about its collar end, which stays on the (posed) coat; the guard
+    # rides the upper arm, slid out along it
+    ps = ar["strap_pivot"]
+    ps2 = ar["strap_pivot_posed"] or (Mc @ ps)
+    Ms = _rt(Quaternion(-Y, math.radians(ar["strap_deg"])), ps, ps2)
+    Mp = Matrix.Translation(X * ar["guard_slide"] + Z * ar["guard_lift"]) @ Mu
+    gh = ar["guard_head"]
+    gt = ar["guard_tail"] or gh + D1 * 0.18
     return [
         Bone("torso", (0, 0, 1.00), (0, 0, 1.50), None, -Y, I4),
-        Bone("clavicle", CLAV0, J, "torso", Z, Mc),
+        Bone("clavicle", C0, J, "torso", Z, Mc),
         Bone("upperarm", J, E, "clavicle", -Y, Mu),
         Bone("forearm", E, WR, "upperarm", -Y, Mf),
         Bone("forearm_twist", E.lerp(WR, 0.5), WR, "forearm", -Y, Mt),
-        Bone("hand", HO, hand_tip, "forearm", HB, Mh),
-        Bone("epaulette", ps, V((0.268, 0.004, 1.575)), "clavicle", Z, Ms),
-        Bone("pauldron", g0, g1, "upperarm", -Y, Mp),
-    ], dict(tau=math.degrees(tau))
+        Bone("hand", HO, HO + HD * 0.10, "forearm", HB, Mh),
+        Bone("epaulette", ps, ar["strap_tail"], "clavicle", Z, Ms),
+        Bone("pauldron", gh, gt, "upperarm", -Y, Mp),
+    ], dict(tau=math.degrees(tau), strap_deg=ar["strap_deg"], guard_slide=ar["guard_slide"])
 
 
 SIDE_BONES = ("clavicle", "upperarm", "forearm", "forearm_twist", "hand", "epaulette", "pauldron")
 MIRROR = Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0))
 
 
-def skeleton(pose="tpose"):
-    """Both sides.  Returns {bone name: Bone}; side bones are suffixed _L / _R."""
-    left, info = skeleton_left(pose)
+def skeleton(pose="tpose", armour=None):
+    """Both sides.  Returns ({bone name: Bone}, info); side bones are suffixed _L / _R."""
+    left, info = skeleton_left(pose, armour)
     out = {}
     for b in left:
         if b.name not in SIDE_BONES:
@@ -294,44 +321,39 @@ def _coords(ob):
     return co @ mw[:3, :3].T + mw[:3, 3]
 
 
+ARM_PARTS = ("arms", "cuffs")          # full arm chain
+TORSO_PARTS = ("torso_coat",)          # shoulder blend + clavicle
+GEAR_PARTS = ("armor_gear",)           # rigid islands: shoulder armour detected by position
+
+
 def skin_class(ob):
+    """'arm' | 'torso' | 'gear' | 'static', from the object's "part" property."""
     part = ob.get("part", "")
-    if part in ("arms", "cuffs") or ob.name.startswith("pauldron_"):
+    if part in ARM_PARTS:
         return "arm"
-    if part == "torso_coat":
+    if part in TORSO_PARTS:
         return "torso"
+    if part in GEAR_PARTS:
+        return "gear"
     return "static"
 
 
-def object_weights(ob):
-    """{bone name (with side suffix): weights (N,)} for one object, position based."""
-    co = _coords(ob)
-    n = len(co)
-    cls = skin_class(ob)
-    if cls == "static":
-        return {"torso": np.ones(n)}
-    side = np.where(co[:, 0] >= 0.0, 1.0, -1.0)
-    pl = co.copy()
-    pl[:, 0] = np.abs(pl[:, 0])
-    rigid = ob.get("topo") == "rigid"
-    isl = _islands(ob.data) if rigid else None
-    if rigid:                                   # evaluate the field once per island, at its centroid
-        ids, inv = np.unique(isl, return_inverse=True)
-        cent = np.zeros((len(ids), 3))
-        np.add.at(cent, inv, pl)
-        cent /= np.bincount(inv)[:, None]
-        cside = np.zeros(len(ids))
-        np.add.at(cside, inv, co[:, 0])
-        cside = np.where(cside >= 0.0, 1.0, -1.0)
-        wl = _weights(cent, cls)
-        wl = {k: v[inv] for k, v in wl.items()}
-        side = cside[inv]
-        if ob.name.startswith("pauldron_"):
-            strap = cent[:, 2] > 1.55               # strap + its buttons sit on top of the shoulder
-            bone = np.where(strap, 0, 1)[inv]
-            wl = {"epaulette": (bone == 0).astype(float), "pauldron": (bone == 1).astype(float)}
-    else:
-        wl = _weights(pl, cls)
+_RING_TOP = S.armhole_ring(16)[0]
+
+
+def armour_kind(c):
+    """Left-side island centroid c -> 'epaulette' (lies on top of the shoulder), 'pauldron' (wraps the
+    upper arm, outside the armhole plane) or None."""
+    c = V(c)
+    if c.z > _RING_TOP.z - 0.015 and 0.09 < c.x < _RING_TOP.x + 0.10 and abs(c.y) < 0.15:
+        return "epaulette"
+    s = min(max((c - J).dot(D1), 0.0), LU)
+    if (c - RC).dot(R_N) > -0.005 and c.z > E.z + 0.05 and (c - (J + D1 * s)).length < 0.14:
+        return "pauldron"
+    return None
+
+
+def _to_sides(wl, side):
     out = {}
     for k, w in wl.items():
         if k == "torso":
@@ -341,6 +363,151 @@ def object_weights(ob):
         out[k + "_R"] = np.where(side < 0, w, 0.0)
     tot = sum(out.values())
     return {k: v / np.maximum(tot, 1e-12) for k, v in out.items() if np.any(v > 1e-6)}
+
+
+def object_weights(ob):
+    """{bone name (with side suffix): weights (N,)} for one object, from rest positions only.
+    Rigid objects (topo 'rigid', and every armor_gear object) get one set of weights per connected
+    island (the field at the island's centroid) -> they move rigidly."""
+    co = _coords(ob)
+    n = len(co)
+    cls = skin_class(ob)
+    if cls == "static":
+        return {"torso": np.ones(n)}
+    pl = co.copy()
+    pl[:, 0] = np.abs(pl[:, 0])
+    if ob.get("topo") == "rigid" or cls == "gear":
+        isl = _islands(ob.data)
+        ids, inv = np.unique(isl, return_inverse=True)
+        cnt = np.bincount(inv)[:, None]
+        cent = np.zeros((len(ids), 3))
+        np.add.at(cent, inv, co)
+        cent /= cnt
+        side = np.where(cent[:, 0] >= 0.0, 1.0, -1.0)
+        cl = cent.copy()
+        cl[:, 0] = np.abs(cl[:, 0])
+        wl = _weights(cl, "arm" if cls == "arm" else "torso")
+        if cls == "gear":
+            kinds = [armour_kind(c) for c in cl]
+            for k in ("epaulette", "pauldron"):
+                m = np.array([kd == k for kd in kinds], dtype=float)
+                for b in wl:
+                    wl[b] = wl[b] * (1.0 - m)
+                wl[k] = m
+        return {k: v[inv] for k, v in _to_sides(wl, side).items()}
+    side = np.where(co[:, 0] >= 0.0, 1.0, -1.0)
+    return _to_sides(_weights(pl, cls), side)
+
+
+# ---------------------------------------------------------------- shoulder armour fit
+def _bvh(co, polys):
+    from mathutils.bvhtree import BVHTree
+    return BVHTree.FromPolygons([V(p) for p in co], polys, epsilon=0.0)
+
+
+def _polys(ob, keep=None):
+    out = []
+    for p in ob.data.polygons:
+        vs = tuple(p.vertices)
+        if keep is None or all(keep[v] for v in vs):
+            out.append(vs)
+    return out
+
+
+def _xf(M, co):
+    m = np.array(M)
+    return co @ m[:3, :3].T + m[:3, 3]
+
+
+def _solve_armour(meshes, weights, pose, gap=0.0015, verbose=True):
+    """Fit the rigid shoulder armour to the posed body (left side; the right is the mirror):
+    guard_slide = smallest slide of the guard out along the raised arm at which it clears every posed
+    arm / coat surface it did not already touch in the A-pose (by >= gap); then the strap's collar end
+    is put where the posed coat moved it, and strap_deg = smallest tilt about it that clears the posed
+    guard and coat.  Returns the armour dict for skeleton()."""
+    bones, _ = skeleton(pose)
+    rest = {o.name: _coords(o) for o in meshes}
+    sel = {}
+    for k in ("epaulette_L", "pauldron_L"):
+        sel[k] = [(o, weights[o.name][k] > 0.5) for o in meshes if k in weights[o.name]]
+    armour = {}
+    obst = []                                            # posed arm/coat surfaces, left side
+    for o in meshes:
+        if skin_class(o) not in ("arm", "torso") or rest[o.name][:, 0].max() < 0.05:
+            continue
+        w = weights[o.name]
+        if not any(k.endswith("_L") for k in w):
+            continue
+        posed = dqs(rest[o.name], w, bones)
+        obst.append((o.name, _bvh(rest[o.name], _polys(o)), _bvh(posed, _polys(o)), posed))
+
+    def part_sets(key, M):
+        out = []
+        for o, m in sel.get(key, []):
+            if not m.any():
+                continue
+            out.append((rest[o.name], _xf(M, rest[o.name]), _polys(o, m), m))
+        return out
+
+    def clear(items, extra=(), gap=gap):
+        for co_rest, co_pose, polys, m in items:
+            tr = _bvh(co_rest, polys)
+            tp = _bvh(co_pose, polys)
+            for name, ta, tb, posed in list(obst) + list(extra):
+                if ta is not None and tr.overlap(ta):
+                    continue                              # already touching in the A-pose: ignore
+                if tp.overlap(tb):
+                    return False
+                for p in co_pose[m]:
+                    if tb.find_nearest(V(p), gap)[0] is not None:
+                        return False
+        return True
+
+    guard = part_sets("pauldron_L", Matrix.Identity(4))
+    if guard:
+        Mu = bones["upperarm_L"].M
+        allg = np.concatenate([g[0][g[3]] for g in guard])
+        armour["guard_head"] = V(allg.mean(0))
+        armour["guard_tail"] = armour["guard_head"] + D1 * 0.18
+        best = None
+        for lift in np.arange(0.0, -P["guard_drop_max"] - 1e-9, -0.001):     # as low as it can sit ...
+            for slide in np.arange(P["guard_slide_min"], P["guard_slide_min"] + 0.0601, 0.002):  # ... least slide
+                if clear(part_sets("pauldron_L", Matrix.Translation(X * slide + Z * lift) @ Mu), gap=P["guard_gap"]):
+                    best = (float(slide), float(lift))
+                    break
+            else:
+                break
+        slide, lift = best or (P["guard_slide_min"], 0.0)
+        armour.update(guard_slide=slide, guard_lift=lift)
+        Mp = Matrix.Translation(X * slide + Z * lift) @ Mu
+        gitems = part_sets("pauldron_L", Mp)
+        gextra = [("guard", None, _bvh(c, pl), c) for _, c, pl, _ in gitems]
+    else:
+        gextra = []
+    strap = part_sets("epaulette_L", Matrix.Identity(4))
+    if strap:
+        alls = np.concatenate([s_[0][s_[3]] for s_ in strap])
+        x0 = alls[:, 0].min()
+        near = alls[alls[:, 0] < x0 + 0.012]
+        pv = V((x0, near[:, 1].mean(), near[:, 2].min()))        # underside of the collar end
+        wpv = _to_sides(_weights(np.array([pv]), "torso"), np.array([1.0]))
+        pv2 = V(dqs(np.array([pv]), wpv, bones)[0])
+        armour.update(strap_pivot=pv, strap_pivot_posed=pv2,
+                      strap_tail=V((alls[:, 0].max(), pv.y, near[:, 2].min())))
+        found = None
+        for deg in np.arange(-10.0, 40.01, 0.5):
+            M = _rt(Quaternion(-Y, math.radians(deg)), pv, pv2)
+            if clear(part_sets("epaulette_L", M), gextra):
+                found = float(deg)
+                break
+        if found is None:
+            print("pose: WARNING no clear strap tilt found; using the clavicle angle")
+        armour["strap_deg"] = P["clav_deg"] if found is None else found
+    if verbose:
+        print(f"pose: shoulder armour fit: guard slide {armour.get('guard_slide', 0) * 1000:.0f} mm, "
+              f"lift {armour.get('guard_lift', 0) * 1000:+.0f} mm, "
+              f"strap tilt {armour.get('strap_deg', 0):.1f} deg (found guard: {bool(guard)}, strap: {bool(strap)})")
+    return armour
 
 
 # ---------------------------------------------------------------- dual quaternion skinning (numpy)
@@ -422,9 +589,10 @@ def apply_pose(objs, pose="tpose", armature=True, verbose=True):
     pose) is created, every mesh gets vertex groups + an Armature modifier, and the deformation is
     taken from evaluating that modifier; otherwise the same dual-quaternion skinning runs in numpy.
     Returns the armature object (or None)."""
-    bones, info = skeleton(pose)
     meshes = [o for o in objs if o.type == "MESH"]
     weights = {o.name: object_weights(o) for o in meshes}
+    armour = _solve_armour(meshes, weights, pose, verbose=verbose)
+    bones, info = skeleton(pose, armour)
     if verbose:
         print(f"pose {pose}: forearm->hand twist {info['tau']:.1f} deg "
               f"({P['twist_share']:.0%} on forearm_twist)")

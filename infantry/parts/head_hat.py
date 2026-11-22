@@ -1,32 +1,41 @@
-"""Head + turtleneck, shield face mask with three raised slats, creased wide-brim hat, band + plaque.
+"""Head + ears + neck, short clumped hair, faceted face mask with glowing slats, flat-brim fedora.
 
-Every position derives from spec v2 (HEAD_CENTER / HEAD_RADII / TORSO / CLOTH["hat_*"]); the
-few part-only constants below say where in docs/ref/*_head.png / callout_hat.png they were read.
+Round 5: matched to the user's FBX game model (docs/ref/fbx/infantry_model.fbx, objects Retopology /
+Neck / Hair / Hat; docs/FBX_COMPARISON.md H1-H7).  The FBX design is adopted at OUR head size: the
+FBX head is ~15 % wider, so its lateral / depth offsets are scaled by FBX_XY (0.87) about our
+HEAD_CENTER and its heights by FBX_Z (0.93) about the chin (FBX chin 1.633 -> ours 1.630).  The hat is
+taken from the FBX directly at our scale (both models are aligned on the hat top, z 1.895).
 
 Topology summary
 ----------------
-head        one 32-around tube from the flared turtleneck hem (z 1.53) to the crown of the skull,
-            closed by an 8x8 all-quad grid on top (hidden inside the hat crown).  Every row is a
-            closed loop round neck / jaw / face / skull, so the loops encircle the face.  Between
-            the neck and the face the rows follow per-column Hermite curves (neck rises vertically,
-            bends forward under the chin and runs into the face tangentially) -> a smooth egg-shaped
-            hood that tapers into a slim neck, no flat underside, no jaw corners.  Poles: only the
-            4 valence-3 corners of the (hidden) top grid.
-hat         one 32-around shell: creased top cap (8x8 grid), crown with front pinches, brim top,
-            rounded rim loop, brim underside, sweatband ring that ends just inside the head (open
-            there; no hidden closure cap).
-hat_band    closed 32-around ribbon; rigid diamond plaque (curved to the band, raised frame,
-            recessed field) with a small 4-point star; small diamond studs on both sides.
-mask        rigid shield plate, a thin shell offset from the face: 12 x 8 quad grid whose columns
-            run parallel to the slats / side edges and whose rows run parallel to the straight top
-            edge and the V bottom edge; a rolled rim (crest + rounded outer edge + side wall back
-            toward the face) all round; open behind.
-mask_slats  three rigid raised slats (flat top, chamfered edges, sloped ends) sitting on the plate.
+head        one 24-around tube: flared neck bottom ring (z 1.530, meets the coat's neck hem), neck,
+            three non-planar jaw loops (throat / under-jaw / jawline: low at the chin, rising to the
+            jaw angle under the ear, nape at the back) -> real jaw and chin; planar skull loops up
+            into the hat crown, closed by a 6x6 grid (hidden).  The face under the mask stays coarse.
+ears        two closed-off ear shells (12 around): root ring sunk into the skull, back of the ear,
+            rolled rim (helix), bowl (concha) closed by a 3x3 grid; solid lobe, low front rim.
+hair        one 24 x 5 quad sheet over the back and sides of the skull from just under the hat's
+            sweatband down to a zig-zag edge of pointed, swept clumps (V point at the nape, a
+            sideburn tuft in front of each ear, a straight edge over the ears); its whole boundary
+            tucks into the skull (no visible edge thickness gap, no open edge in view).
+mask        rigid faceted plate: a Coons quad grid between the straight top edge, the two short
+            rear side edges and the long V edge to the chin point.  Columns run brow -> chin and
+            converge on the chin (they carry the centre ridge with its V channel, the light grooves
+            and the side ridges); rows are nested chevrons parallel to the V edge.  Relief is a
+            per-vertex offset along the plate normal; a raised rim runs all round and the outer
+            edge rolls back into a wall that ends inside the head (ray-cast), so no gap shows.
+mask_lights the FBX "Lights" material slats as separate thin rigid strips sunk into the plate: the two
+            long grooves, the top of the centre channel and a short strip under the brow on each
+            side facet.  Own object so it can get an emissive material.
+hat         one 40-around shell: sweatband (ends inside the head), thin flat oval brim with a wavy
+            edge, crown with two deep front pinch dents and a centre crease, 10x10 top grid.
+hat_band    thin plain closed ribbon round the base of the crown.
 """
 import math
 
 import bpy  # noqa: F401
 from mathutils import Vector as V
+from mathutils.bvhtree import BVHTree
 
 from .. import lib, spec
 
@@ -35,70 +44,115 @@ HC = spec.HEAD_CENTER
 HR = spec.HEAD_RADII
 C = spec.CLOTH
 
-N_HEAD = 32
-N_HAT = 32
+FBX_XY = 0.87                      # FBX head (x +-0.090 incl. ears) -> ours (+-0.078)
+FBX_Z = 1.00                       # heights: FBX hat == ours, so FBX z - 0.003 (chin 1.633 -> 1.630)
 
-# ------------------------------------------------------------------ hat (spec v2 + reads from the sheet)
-BRIM_Z = C["hat_brim_z"]           # brim meets the crown
-RIM_Z = C["hat_brim_rim_z"]        # rim height at the sides (front view)
-BRIM_R = C["hat_brim_r"]
-CROWN_R = C["hat_crown_r"]         # crown base, hidden under the band
-CROWN_TOP = C["hat_crown_top_z"]
+# ------------------------------------------------------------------ hat (FBX "Hat" at our scale)
+N_HAT = 40
 HAT_CY = HC.y
-BRIM_TH = 0.009                    # rim thickness: callout_hat shows a clearly thick rounded rim
-BRIM_FRONT_DROOP = 0.031           # side_head + review: front rim hangs well below the sides (fedora snap)
-BRIM_BACK_DROOP = 0.004            # review: the back curves down too (bowl); compare SIDE keeps the back rim ~1.74
-BRIM_CURVE = 1.15                  # droop spread over the brim -> reads as a curved bowl, not a flat disc
-BRIM_ROLL = 0.004                  # brim rises into the band: small upward fillet at the crown
-CROWN_UPPER = 0.93                 # compare FRONT/SIDE: crown just above the band is 0.93 x hat_crown_r
-CROWN_TAPER = 0.10                 # compare FRONT f=0.02: ... narrowing ~5 % more toward the top edge
-CROWN_ROUND = 0.016                # front_head: soft, well-rounded top edge
-BAND_H = 0.038                     # front_head: band is ~30 % of the crown height
-BAND_OFF = 0.005                   # band outer face over the crown -> 0.093 half width (FRONT table)
-BAND_Z = (BRIM_Z + 0.002, BRIM_Z + 0.002 + BAND_H)
-CREASE_DEPTH = 0.0060              # front_head / back_head: notch in the middle of the top edge
-CREASE_W = 0.026                   # half width (gaussian) of the centre crease
-PINCH_DEPTH = 0.0110               # front_head: pinch dimples at the upper front corners
-PINCH_A = math.radians(40)         # ... this far either side of the front centre line
-FRONT_LEAN = 0.009                 # side_head: the crown front leans back toward the top
-PLAQUE_HW, PLAQUE_HH = 0.035, 0.033   # front_head: diamond ~35 % of crown width, ~45 % of its height
-PLAQUE_TH = 0.0045
-STUD_ANGLES = (-19.0, -56.0, 27.0)    # side_head: three small diamond studs per side (deg, left side)
+HAT_TOP = C["hat_crown_top_z"]     # 1.895: figure top, every comparison aligns on it
+BRIM_Z = 1.800                     # FBX: brim top where it meets the crown ...
+RIM_Z = 1.7745                     # ... slopes gently down to the edge (mean height) ...
+RIM_WAVE = 0.0060                  # ... which is wavy: up at the four diagonals, down front/back/sides
+BRIM_R = (0.158, 0.178)            # FBX: oval brim, deeper front-to-back
+BRIM_TH = 0.0050                   # FBX: thin brim
+BRIM_ROLL = 0.0
+BAND_Z = (BRIM_Z + 0.001, 1.827)   # FBX: thin plain band
+BAND_OFF = 0.0040
+# crown wall (inside the band, then up to the top edge): (z, rx, ry) -- FBX sections
+_CROWN_KEYS = [(BRIM_Z, 0.0790, 0.0975), (1.827, 0.0770, 0.0950), (1.845, 0.0740, 0.0905),
+               (1.865, 0.0705, 0.0870), (HAT_TOP, 0.0675, 0.0835)]
+CROWN_ROUND = 0.011                # rounded top edge
+CROWN_FRONT_NARROW = 0.07          # FBX top view: crown is egg-shaped, narrower at the front
+CREASE_DEPTH = 0.0105              # FBX: centre crease dips the top (deepest toward the front)
+CREASE_W = 0.024
+PINCH_A = math.radians(40)         # FBX: two deep pinch dents this far either side of the front
+PINCH_Z = (1.836, 1.882)           # ... spanning this height
+PINCH_HW = math.radians(17)        # ... and this half width
+PINCH_DEPTH = 0.0165
+
+
+def _crown_r(z):
+    rx, ry = lib_cr(_CROWN_KEYS, z)
+    return rx, ry
+
 
 # ------------------------------------------------------------------ head / neck
-# The hood is a smooth egg: compare FRONT f=0.10 (z 1.705) gives a half width of ~0.068, compare
-# SIDE the same row ~0.083 in front of / ~0.076 behind HEAD_CENTER.y -> side depth only ~1.18 x the
-# front width (HEAD_RADII.y is the old, too deep value; the hood uses its own sections below).
-HOOD = 0.003                       # balaclava cloth over the bare neck
-Z_SKULL_TOP = HC.z + HR.z          # 1.83, inside the crown
-Z_CAP_RING = HC.z + 0.625 * HR.z   # last planar skull ring (inside the crown)
-Z_FACE0 = 1.655                    # lowest horizontal face loop; below it the rows turn into the neck
-Z_NECK_TOP = 1.600                 # highest horizontal neck loop
-Z_NECK_END = 1.53                  # neck runs down to here inside the collar (coat neck hem meets it)
-TURTLE = 0.006                     # smooth turtleneck over the neck (round-3 review: no ribbing)
-TURTLE_FOLD = 0.0015               # amplitude of its one soft fold
-NECK_FLARE = 0.012                 # bottom ring flares out to meet the coat's neck opening
-NECK_TOP_SHIFT = -0.011            # upper neck sits forward under the skull ...
-NECK_TOP_SLIM = (0.006, 0.008)     # ... and slimmer (x, y): slim neck, nape in line with the skull
-NECK_LEAN = 0.70                   # throat leans forward into the chin (no S-shaped hook)
-N_TRANS = 5                        # rows from the neck top loop to the first face loop
+N_HEAD = 24
+Z_NECK_END = 1.530                 # neck bottom ring: coat neck hem meets it (shared seam)
+# neck rings (z, rx, ry, cy, front sag): bottom two flare out over the coat's turned-in neck hem
+# (which runs in to spec.torso_section(1.63) = rx 0.050 / ry 0.054 up to z ~1.58 at the sides)
+_NECK = [(Z_NECK_END, 0.0710, 0.0750, 0.005, 0.0040),
+         (1.542, 0.0632, 0.0672, 0.005, 0.0032),
+         (1.562, 0.0568, 0.0608, 0.004, 0.0015),
+         (1.585, 0.0540, 0.0578, 0.003, 0.0),
+         (1.604, 0.0460, 0.0500, 0.000, 0.0)]     # slim neck above the hem (FBX neck ~ +-0.041)
+# jaw loops: z at front / side / back, rx, cy, front depth, back depth, front exponent
+_JAW = [dict(zf=1.618, zs=1.624, zb=1.628, rx=0.0425, cy=-0.002, df=0.0500, db=0.0500, ef=2.0),   # throat / nape
+        dict(zf=1.631, zs=1.650, zb=1.645, rx=0.0445, cy=-0.008, df=0.0660, db=0.0600, ef=1.3),   # under the jaw
+        dict(zf=1.640, zs=1.672, zb=1.664, rx=0.0510, cy=-0.010, df=0.0770, db=0.0680, ef=1.25)]  # jawline + V chin
+# planar skull sections (z, half width, front depth, back depth) about HEAD_CENTER
+_HEAD_KEYS = [(1.664, 0.0510, 0.0770, 0.0680),     # guide only (matches the jawline loop at the back)
+              (1.690, 0.0548, 0.0800, 0.0775),     # cheeks
+              (1.712, 0.0588, 0.0820, 0.0840),
+              (1.735, 0.0615, 0.0830, 0.0890),
+              (1.758, 0.0635, 0.0830, 0.0910),
+              (1.780, 0.0640, 0.0820, 0.0910),     # widest skull, just under the brim
+              (1.800, 0.0615, 0.0770, 0.0870),     # inside the hat from here (sweatband 1.795)
+              (1.822, 0.0550, 0.0680, 0.0770)]
+Z_SKULL_TOP = 1.845                # inside the crown
+_HEAD_POW = 2.05
 
-# ------------------------------------------------------------------ mask (front_head / side_head)
-# Shield plate: straight top edge tucked under the brim, sides wrapping round the cheeks and running
-# down nearly vertically (front view), then a V converging to a crisp point at the chin.
-MASK_Z_TOP = BRIM_Z - BRIM_TH - 0.006   # top row of the plate grid (rim adds ~3.5 mm above)
-MASK_Z_SIDE = 1.684                # front_head: sides run down to here ...
-MASK_Z_TIP = 1.629                 # ... then the V edges converge to the point (rim adds ~5 mm below)
-MASK_TH_TOP = math.radians(72)     # side_head: at the brow the plate wraps far round the cheeks
-MASK_TH_SIDE = math.radians(55)    # ... less at the bottom of the side edge -> diagonal rear edge
-MASK_P = 0.0055                    # plate outer surface over the head surface
-MASK_T = 0.0045                    # plate thickness: the rim's side wall ends 1 mm off the head
-MASK_NR = 8                        # rows (top edge -> V edge)
-MASK_NH = 6                        # columns per half (2 between centre and slat, 4 slat -> side edge)
-RIM = (0.0018, 0.0010, 0.0035, -0.0006)   # rim: crest (out, up), outer roll (out, down)
-SLAT_X = (0.0300, 0.0265)          # front_head: side slats at the top / bottom (slightly converging)
-SLAT_HW, SLAT_H, SLAT_CH = 0.0043, 0.0058, 0.0017   # ~8.5 mm wide, ~6 mm proud, chamfered top edges
-SLAT_SINK = 0.0008
+# ------------------------------------------------------------------ ears (FBX "Neck" ears, scaled)
+EAR_ZC = 1.728                     # FBX ear z 1.699..1.764
+EAR_FRONT_Y = -0.0105              # front edge just behind the mask's rear edge / sideburn
+EAR_W, EAR_H = 0.033, 0.061
+EAR_FLARE = math.radians(22)       # back of the ear stands out from the skull (FBX front view)
+EAR_LEAN = math.radians(12)        # top leans back
+N_EAR = 12
+
+# ------------------------------------------------------------------ mask (FBX "Retopology", scaled)
+MASK_TOP_Z = 1.776                 # straight top edge, tucked under the brim (underside 1.795)
+MASK_SIDE_Z = 1.733                # short rear side edges end here, the V edge runs to the chin
+MASK_TIP_Z = 1.630
+# front-view outline half width (FBX Retopology sections, scaled)
+_MASK_W = [(1.630, 0.0), (1.637, 0.0087), (1.647, 0.0174), (1.657, 0.0252), (1.667, 0.0330),
+           (1.677, 0.0426), (1.687, 0.0487), (1.697, 0.0530), (1.717, 0.0600), (1.737, 0.0653),
+           (1.757, 0.0687), (1.776, 0.0715)]
+MASK_XC = 0.0715
+_MASK_YF = [(1.630, -0.0945), (1.700, -0.0985), (1.776, -0.0995)]   # front centre line (base)
+# plan section: depth back from the front = W * (p u^2 + (c - p) u^8), u = |x| / W: pointed prow
+# low down, flat front + steep side facets sweeping back toward the ears higher up
+_MASK_P = [(1.697, 0.94, 0.97), (1.727, 0.55, 0.99), (1.757, 0.33, 1.03), (1.776, 0.31, 1.05)]
+# columns (half): x on the top edge, fraction along the V edge (tip 0 .. rear side edge 1)
+_MASK_COLS = [(0.0, 0.0),
+              (0.0040, 0.010),     # 1 channel lip (V channel in the centre ridge)
+              (0.0090, 0.026),     # 2 centre ridge outer top edge
+              (0.0108, 0.034),     # 3 ridge foot / light groove
+              (0.0215, 0.085),     # 4 groove floor outer
+              (0.0233, 0.095),     # 5 side ridge top
+              (0.0305, 0.135),     # 6 side ridge top
+              (0.0323, 0.145),     # 7 side ridge foot / side facet
+              (0.0460, 0.340),     # 8 facet
+              (0.0600, 0.620),     # 9 rim foot
+              (0.0680, 0.820),     # 10 rim inner edge
+              (MASK_XC, 1.0)]      # 11 outline (rear side edge)
+_ROWS_TOP = [0.0, 0.0035, 0.0055, 0.0085, 0.0135, 0.0165]   # metres down from the top edge
+_ROWS_BOT = [0.0055, 0.0035, 0.0]                             # metres up from the V edge
+N_MID = 6
+H_RIM, H_RIDGE, H_CAP, H_SLOT = 0.0035, 0.0080, 0.0090, 0.0025      # FBX: ridges ~1 cm proud
+H_SIDE, H_FLOOR, H_LIGHT, H_CHEV = 0.0068, 0.0, -0.0010, 0.0025
+
+# ------------------------------------------------------------------ hair (FBX "Hair", scaled)
+# left half columns from the front end to the back centre: (plan angle deg, bottom z, kind)
+_HAIR_COLS = [(-9.0, 1.752, "end"), (-5.0, 1.692, "burn"), (0.0, 1.771, "ear"), (8.0, 1.772, "ear"),
+              (16.0, 1.772, "ear"), (24.0, 1.766, "ear"), (33.0, 1.720, "tip"), (42.0, 1.730, "notch"),
+              (52.0, 1.694, "tip"), (61.0, 1.706, "notch"), (70.0, 1.676, "tip"), (80.0, 1.690, "notch"),
+              (90.0, 1.657, "tip")]
+HAIR_TOP = 1.7925                  # top edge tucked into the skull just under the sweatband (1.795)
+HAIR_Z1 = 1.7895
+HAIR_ROWS = (0.30, 0.60, 0.85, 1.0)
+HAIR_OFF = (0.0080, 0.0100, 0.0092, 0.0070)    # thickness over the skull per row (last = edge)
 
 
 # ------------------------------------------------------------------ small helpers
@@ -121,6 +175,9 @@ def _cr(keys, x):
                 out.append((2 * t3 - 3 * t2 + 1) * p1[k] + (t3 - 2 * t2 + t) * m1
                            + (-2 * t3 + 3 * t2) * p2[k] + (t3 - t2) * m2)
             return tuple(out)
+
+
+lib_cr = _cr
 
 
 def _spow(c, e):
@@ -169,159 +226,266 @@ def _add_ring(verts, pts):
     return list(range(i0, i0 + len(pts)))
 
 
+def _strip(rings, verts, faces):
+    """Closed 4-sided tube through rings of 4 points + quad end caps (a thin glowing slat)."""
+    idx = [_add_ring(verts, r) for r in rings]
+    for a, b in zip(idx, idx[1:]):
+        faces += _bridge(a, b)
+    faces.append(tuple(reversed(idx[0])))
+    faces.append(tuple(idx[-1]))
+
 
 # ------------------------------------------------------------------ head surface
-# Horizontal sections of the hood: (z, half width, front depth, back depth), metres from the
-# HEAD_CENTER axis.  Rows below Z_FACE0 are guide keys only: the mask's lower point follows them
-# (gently receding chin), the mesh itself turns into the neck there.
-_HEAD_KEYS = [
-    (1.590, 0.0530, 0.0560, 0.0560),
-    (1.620, 0.0560, 0.0630, 0.0590),
-    (1.655, 0.0600, 0.0730, 0.0640),   # lowest face loop: jaw tapers toward the slim neck
-    (1.680, 0.0645, 0.0790, 0.0705),
-    (1.705, 0.0675, 0.0825, 0.0765),   # compare row f=0.10
-    (1.730, 0.0695, 0.0835, 0.0825),   # side_head: the skull bulges out behind just under the brim
-    (1.760, 0.0705, 0.0830, 0.0845),   # brow, at the hat's sweatband
-    (1.790, 0.0700, 0.0790, 0.0815),   # cap ring (inside the crown)
-    (1.815, 0.0640, 0.0720, 0.0740),
-]
-_HEAD_POW = 2.05                 # back half: plain round skull
-_FACE_POW = 2.0                  # front half: elliptical -> smooth egg, no cheek corners
-
-
 def head_section(z):
-    """(half width, front depth, back depth) of the hooded head at height z."""
+    """(half width, front depth, back depth) of the skull at height z (planar part of the head)."""
     return _cr(_HEAD_KEYS, z)
 
 
 def head_pt(a, z, grow=0.0):
-    """Point on the head surface at plan angle a (0 = +X, 270 deg = front) and height z."""
+    """Point on the skull at plan angle a (0 = +X, 270 deg = front) and height z."""
     rx, df, db = head_section(z)
     c, s = math.cos(a), math.sin(a)
-    e = 2.0 / (_HEAD_POW if s > 0 else _FACE_POW)
+    e = 2.0 / (_HEAD_POW if s > 0 else 2.0)
     d = db if s > 0 else df
     return V(((rx + grow) * _spow(c, e), HC.y + (d + grow) * _spow(s, e), z))
 
 
-def _neck_ring(z, off, tilt=0.0, n=N_HEAD, wobble=0.0, seed=0.0):
-    """Turtleneck loop: the spec's neck-top section (kept all the way down into the collar), moved a
-    little forward and slimmed front-back toward the top so the nape lines up with the skull."""
-    cy, rx, ry = spec.torso_section(spec.TORSO[-1][0])
-    k = _smooth(1.536, Z_NECK_TOP, z)
-    cy += NECK_TOP_SHIFT * k
-    rx -= NECK_TOP_SLIM[0] * k
-    ry -= NECK_TOP_SLIM[1] * k
-    out = []
-    for i in range(n):
-        a = TAU * i / n
-        o = off + (lib.fold_wave(i / n, 0.5, amp=wobble, count=3.0, seed=seed, grow=0.0) if wobble else 0.0)
-        out.append(V(((rx + o) * math.cos(a), cy + (ry + o) * math.sin(a), z + tilt * math.sin(a))))
-    return out
+def _jaw_pt(r, a):
+    c, s = math.cos(a), math.sin(a)
+    z = r["zs"] + (r["zf"] - r["zs"]) * max(-s, 0.0) ** 2 + (r["zb"] - r["zs"]) * max(s, 0.0) ** 2
+    e = 2.0 / (r["ef"] if s < 0 else 2.0)
+    d = r["df"] if s < 0 else r["db"]
+    return V((r["rx"] * _spow(c, e), r["cy"] + d * _spow(s, e), z))
 
 
-def _hermite(p0, t0, p1, t1, t):
-    t2, t3 = t * t, t * t * t
-    return ((2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * t0
-            + (-2 * t3 + 3 * t2) * p1 + (t3 - t2) * t1)
-
-
-def build_head():
+def _head_mesh():
     n = N_HEAD
-    verts, rings = [], []
-    # --- turtleneck: flared hem ring at Z_NECK_END, two soft folds, up to the neck top loop
-    zs = [Z_NECK_END, 1.542, 1.557, 1.572, 1.587, Z_NECK_TOP]
-    for k, z in enumerate(zs):
-        off = HOOD + TURTLE + (TURTLE_FOLD if k == 3 else 0.0)
-        off += NECK_FLARE if k == 0 else (NECK_FLARE * 0.35 if k == 1 else 0.0)
-        sag = 0.004 * (1.0 - k / (len(zs) - 1))       # the soft fold dips slightly at the front
-        rings.append(_neck_ring(z, off, tilt=sag, wobble=0.001 if k == 3 else 0.0, seed=k * 0.37))
-    # --- neck -> face: per column a Hermite curve leaving the neck vertically and entering the
-    #     face loop along the face surface (rounded chin in front, straight nape behind)
-    top = rings[-1]
-    for k in range(1, N_TRANS):
-        t = k / N_TRANS
-        ring = []
-        for i in range(n):
-            a = TAU * i / n
-            p0, p1 = top[i], head_pt(a, Z_FACE0)
-            d1 = (head_pt(a, Z_FACE0 + 0.004) - head_pt(a, Z_FACE0 - 0.004)).normalized()
-            L = (p1 - p0).length
-            lean = NECK_LEAN * max(-math.sin(a), 0.0) ** 2     # front of the neck leans forward
-            ring.append(_hermite(p0, V((0, -lean, 1)).normalized() * L, p1, d1 * L, t))
-        rings.append(ring)
-    # --- face / skull loops, ~1.3 cm apart up to the brow, then the cap ring inside the crown
-    zb = 1.760
-    nf = 8
-    for k in range(nf + 1):
-        z = Z_FACE0 + (zb - Z_FACE0) * k / nf
+    rings = []
+    for z, rx, ry, cy, sag in _NECK:
+        rings.append([V((rx * math.cos(TAU * i / n), cy + ry * math.sin(TAU * i / n),
+                         z + sag * math.sin(TAU * i / n))) for i in range(n)])
+    for r in _JAW:
+        rings.append([_jaw_pt(r, TAU * i / n) for i in range(n)])
+    for z, *_ in _HEAD_KEYS[1:]:
         rings.append([head_pt(TAU * i / n, z) for i in range(n)])
-    rings.append([head_pt(TAU * i / n, Z_CAP_RING) for i in range(n)])
+    verts, faces = [], []
     idx = [_add_ring(verts, r) for r in rings]
-    faces = []
     for a, b in zip(idx, idx[1:]):
         faces += _bridge(a, b)
-
-    # --- top of the skull: 8x8 grid, domed (inside the crown)
-    rx, df, db = head_section(Z_CAP_RING)
+    zc = _HEAD_KEYS[-1][0]
+    rx, df, db = head_section(zc)
 
     def dome(p):
         d = db if p.y > HC.y else df
         rho2 = min((p.x / rx) ** 2 + ((p.y - HC.y) / d) ** 2, 1.0)
-        return V((p.x, p.y, Z_CAP_RING + (Z_SKULL_TOP - Z_CAP_RING) * (1.0 - rho2) ** 0.62))
-    faces += _coons(idx[-1], verts, rot=4, shape=dome)
+        return V((p.x, p.y, zc + (Z_SKULL_TOP - zc) * (1.0 - rho2) ** 0.6))
+    faces += _coons(idx[-1], verts, rot=3, shape=dome)
+    return verts, faces
+
+
+class _Surf:
+    """Ray-cast access to the built head mesh: exact surface point + outward normal at (angle, z)."""
+
+    def __init__(self, verts, faces):
+        self.bvh = BVHTree.FromPolygons([tuple(v) for v in verts], [tuple(f) for f in faces])
+
+    def at(self, a, z):
+        o = V((0.0, HC.y, z))
+        d = V((math.cos(a), math.sin(a), 0.0))
+        hit, nrm, _, _ = self.bvh.ray_cast(o, d, 0.5)
+        if hit is None:
+            return head_pt(a, z), d
+        if nrm.dot(d) < 0:
+            nrm = -nrm
+        return hit, nrm
+
+    def cast(self, o, d, dist=0.05):
+        hit, _, _, _ = self.bvh.ray_cast(o, d, dist)
+        return hit
+
+
+def build_head(verts, faces):
     return lib.mesh_object("head", verts, faces, topo="main")
 
+
+# ------------------------------------------------------------------ ears
+def _ear_mesh(surf):
+    # front attachment point: skull point at y = EAR_FRONT_Y on the left side at EAR_ZC
+    lo, hi = -math.pi / 2, 0.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if head_pt(mid, EAR_ZC).y < EAR_FRONT_Y:
+            lo = mid
+        else:
+            hi = mid
+    a0 = (lo + hi) / 2
+    A, _ = surf.at(a0, EAR_ZC)
+    wd = V((0.0, math.sin(EAR_LEAN), math.cos(EAR_LEAN)))
+    s0 = V((math.sin(EAR_FLARE), math.cos(EAR_FLARE), 0.0))
+    sd = (s0 - wd * s0.dot(wd)).normalized()
+    nd = sd.cross(wd).normalized()
+    if nd.x < 0:
+        nd = -nd
+    cen = A + sd * (EAR_W / 2)
+    n = N_EAR
+
+    def outline(k):
+        phi = TAU * k / n
+        c, s = math.cos(phi), math.sin(phi)
+        su = 0.5 * EAR_W * c * (1.0 - 0.28 * max(-s, 0.0)) + 0.003 * max(s, 0.0) - 0.002 * max(-s, 0.0)
+        return su, 0.5 * EAR_H * s, c, s
+
+    # (outline scale, height over the ear plane): back, rim edge, helix crest, helix inner, bowl
+    prof = [(1.00, 0.0), (0.97, 0.0050), (0.85, 0.0063), (0.70, 0.0043), (0.47, 0.0012)]
+    verts, rings = [], []
+    root = []
+    for k in range(n):
+        su, w, c, s = outline(k)
+        q = cen + sd * (su * 0.78) + wd * (w * 0.78)
+        a = math.atan2(q.y - HC.y, q.x)
+        p, nrm = surf.at(a, q.z)
+        root.append(p - nrm * 0.003)
+    rings.append(root)
+    for j, (ks, h) in enumerate(prof):
+        ring = []
+        for k in range(n):
+            su, w, c, s = outline(k)
+            lobe = max(-s, 0.0) ** 2 * max(-c + 0.3, 0.0) / 1.3   # lower front: solid lobe
+            front = max(-c, 0.0) ** 2                               # front: low rim (tragus side)
+            hh = h
+            if j == 2:
+                hh = h - 0.0022 * front
+            if j == 3:
+                hh = h + (0.0060 - h) * min(lobe * 2.0, 1.0)
+            if j == 4:
+                hh = h + (0.0050 - h) * min(lobe * 2.0, 1.0)
+            ring.append(cen + sd * (su * ks) + wd * (w * ks) + nd * hh)
+        rings.append(ring)
+    idx = [_add_ring(verts, r) for r in rings]
+    faces = []
+    for a, b in zip(idx, idx[1:]):
+        faces += _bridge(a, b)
+    faces += _coons(idx[-1], verts, rot=1, shape=lambda p: p - nd * 0.0006)
+    return verts, faces
+
+
+def build_ears(surf):
+    verts, faces = _ear_mesh(surf)
+    m = len(verts)
+    verts = verts + [V((-v.x, v.y, v.z)) for v in verts]
+    faces = faces + [tuple(i + m for i in reversed(f)) for f in faces]
+    return lib.mesh_object("ears", verts, faces, topo="main")
+
+
+# ------------------------------------------------------------------ hair
+def build_hair(surf):
+    left = _HAIR_COLS
+    cols = left + [(180.0 - a, zb, kind) for a, zb, kind in reversed(left[:-1])]
+    verts, grid, par = [], [], []
+    for a_deg, zb, kind in cols:
+        col, cpar = [], []
+        back = 1.0 if a_deg < 90.0 else -1.0                 # toward the back centre
+        for k in range(len(HAIR_ROWS) + 2):
+            if k == 0:
+                z, off, sweep = HAIR_TOP, -0.002, 0.0
+            elif k == 1:
+                z, off, sweep = HAIR_Z1, HAIR_OFF[0], 0.0
+            else:
+                f = HAIR_ROWS[k - 2]
+                z = HAIR_Z1 + (zb - HAIR_Z1) * f
+                off = HAIR_OFF[min(k - 1, 3)]
+                sweep = f ** 1.5
+            if k == len(HAIR_ROWS) + 1:                       # edge: thin pointed tips
+                off = 0.0022 if kind in ("tip", "burn") else 0.0030
+            elif k >= 2:
+                off += {"tip": 0.0016, "notch": -0.0012, "burn": 0.0006}.get(kind, 0.0)
+            da = 0.0
+            if kind == "tip":
+                da = 4.5 * sweep * back
+            elif kind == "notch":
+                da = 2.5 * sweep * back
+            elif kind == "burn":
+                da = -3.0 * sweep * back                      # sideburn sweeps forward
+            a = math.radians(a_deg + da)
+            p, nrm = surf.at(a, z)
+            verts.append(p + nrm * off)
+            col.append(len(verts) - 1)
+            cpar.append((a, z))
+        grid.append(col)
+        par.append(cpar)
+    nc, nr = len(grid), len(grid[0])
+    faces = []
+    for i in range(nc - 1):
+        for k in range(nr - 1):
+            faces.append((grid[i][k], grid[i + 1][k], grid[i + 1][k + 1], grid[i][k + 1]))
+    # tuck: the whole boundary turns into the skull
+    loop = ([(i, 0) for i in range(nc)] + [(nc - 1, k) for k in range(1, nr)]
+            + [(i, nr - 1) for i in range(nc - 2, -1, -1)] + [(0, k) for k in range(nr - 2, 0, -1)])
+    outer, inner = [], []
+    for i, k in loop:
+        a, z = par[i][k]
+        p, nrm = surf.at(a, z)
+        verts.append(p - nrm * (0.0035 if k == 0 else 0.0015))
+        outer.append(grid[i][k])
+        inner.append(len(verts) - 1)
+    faces += _bridge(outer, inner)
+    return lib.mesh_object("hair", verts, faces, topo="main")
 
 
 # ------------------------------------------------------------------ hat
 def _brim_r(t):
-    return (CROWN_R[0] + (BRIM_R[0] - CROWN_R[0]) * t, CROWN_R[1] + (BRIM_R[1] - CROWN_R[1]) * t)
+    c0 = _crown_r(BRIM_Z)
+    return (c0[0] + (BRIM_R[0] - c0[0]) * t, c0[1] + (BRIM_R[1] - c0[1]) * t)
 
 
 def rim_z(a):
-    """Rim height at plan angle a: hat_brim_rim_z at the sides, droops at the front, a little up behind."""
-    s = math.sin(a)
-    return RIM_Z - BRIM_FRONT_DROOP * max(-s, 0.0) ** 2 - BRIM_BACK_DROOP * max(s, 0.0) ** 2
+    """Brim edge height at plan angle a: flat with a gentle four-lobed wave."""
+    return RIM_Z - RIM_WAVE * math.cos(4.0 * a)
 
 
 def brim_z(t, a):
     """Top surface of the brim.  t: 0 at the crown, 1 at the rim."""
-    return BRIM_Z + (rim_z(a) - BRIM_Z) * t ** BRIM_CURVE + BRIM_ROLL * max(0.0, 1.0 - t / 0.25) ** 2
+    return BRIM_Z + (rim_z(a) - BRIM_Z) * t ** 1.1 + BRIM_ROLL * max(0.0, 1.0 - t / 0.2) ** 2
 
 
-def crown_r(z):
-    """Crown ellipse radii at height z: hat_crown_r under the band, CROWN_UPPER x that above it."""
-    f = 1.0 - (1.0 - CROWN_UPPER) * _smooth(BRIM_Z + 0.006, BAND_Z[1] - 0.004, z)
-    f *= 1.0 - CROWN_TAPER * min(max((z - BAND_Z[1]) / (CROWN_TOP - BAND_Z[1]), 0.0), 1.0)
-    return CROWN_R[0] * f, CROWN_R[1] * f
+def crown_r(z, a=None):
+    rx, ry = _crown_r(z)
+    if a is not None:
+        up = _smooth(BAND_Z[1], BAND_Z[1] + 0.03, z)
+        rx *= 1.0 - CROWN_FRONT_NARROW * up * max(-math.sin(a), 0.0) ** 2
+    return rx, ry
 
 
-def _hat_ring(rx, ry, zf, n=N_HAT):
-    return [V((rx * math.cos(TAU * i / n), HAT_CY + ry * math.sin(TAU * i / n),
-               zf(TAU * i / n) if callable(zf) else zf)) for i in range(n)]
+def _hat_ring(rfun, zf, n=N_HAT):
+    out = []
+    for i in range(n):
+        a = TAU * i / n
+        rx, ry = rfun(a)
+        out.append(V((rx * math.cos(a), HAT_CY + ry * math.sin(a), zf(a) if callable(zf) else zf)))
+    return out
 
 
 def _crown_shape(p):
-    """Fedora deformation of crown / top points: centre crease along the top (front-back) and two
-    pinch dimples at the upper front corners."""
-    up = _smooth(BAND_Z[1] + 0.012, CROWN_TOP, p.z)
-    if up <= 0.0:
-        return p
+    """Fedora deformation of the crown: centre crease along the top and two deep pinch dents."""
     q = p.copy()
-    # centre crease: deepest at the front half, a notch in the FRONT / BACK silhouettes
-    g = math.exp(-(p.x / CREASE_W) ** 2)
-    fb = 1.0 if p.y < HAT_CY else 0.8
-    q.z -= CREASE_DEPTH * fb * g * _smooth(CROWN_TOP - 0.022, CROWN_TOP - 0.004, p.z)
     a = math.atan2(p.y - HAT_CY, p.x)
-    # front of the crown leans back toward the top
-    q.y += FRONT_LEAN * up * max(-math.sin(a), 0.0) ** 2
-    # pinches
+    # centre crease: a front-back trough dipping the top, deepest toward the front
+    top = _smooth(HAT_TOP - 0.030, HAT_TOP - 0.004, p.z)
+    if top > 0:
+        g = math.exp(-(p.x / CREASE_W) ** 2)
+        fb = 1.0 if p.y < HAT_CY else 0.65
+        q.z -= CREASE_DEPTH * fb * g * top
+    # pinches: bowl-shaped dents with a fairly crisp rim
+    zc, hz = 0.5 * (PINCH_Z[0] + PINCH_Z[1]), 0.5 * (PINCH_Z[1] - PINCH_Z[0])
     for ap in (-math.pi / 2 + PINCH_A, -math.pi / 2 - PINCH_A):
         d = (a - ap + math.pi) % TAU - math.pi
-        w = math.exp(-(d / 0.36) ** 2) * up
-        if w > 1e-3:
+        r2 = (d / PINCH_HW) ** 2 + ((p.z - zc) / hz) ** 2
+        if r2 < 1.0:
+            w = (1.0 - r2) ** 0.55
             r = V((p.x, p.y - HAT_CY, 0.0))
-            q -= r.normalized() * (PINCH_DEPTH * w) if r.length > 1e-6 else V()
+            if r.length > 1e-6:
+                q -= r.normalized() * (PINCH_DEPTH * w)
+                q.z += 0.002 * w                           # dent floor tilts up a little
     return q
 
 
@@ -329,291 +493,223 @@ def build_hat():
     n = N_HAT
     verts, faces = [], []
     rings = []
-    # sweatband: ends just inside the head at brow level (open there; the head fills it)
-    rings.append([head_pt(TAU * i / n, BRIM_Z - 0.002, grow=-0.002) for i in range(n)])
-    # brim underside (inner -> rim)
-    T_UNDER = (0.0, 0.24, 0.48, 0.72, 0.92)
-    for t in T_UNDER:
+    under0 = brim_z(0.0, 0.0) - BRIM_TH
+    # sweatband: ends just inside the head (open there; the head fills it)
+    rings.append([head_pt(TAU * i / n, under0 + 0.0005, grow=-0.002) for i in range(n)])
+    # brim underside (crown -> rim), rim edge, brim top (rim -> crown)
+    for t in (0.0, 0.5, 0.92):
         rx, ry = _brim_r(t)
         if t == 0.0:
             rx, ry = rx - 0.002, ry - 0.002
-        th = BRIM_TH - 0.0015 * (1 - t)
-        rings.append(_hat_ring(rx, ry, lambda a, t=t, th=th: brim_z(t, a) - th))
-    # rounded rim: bottom edge, outer edge, top edge
+        rings.append(_hat_ring(lambda a, rx=rx, ry=ry: (rx, ry), lambda a, t=t: brim_z(t, a) - BRIM_TH))
     rxo, ryo = _brim_r(1.0)
-    for dr, dz in ((0.0045, 1.0), (0.0013, 0.86), (0.0, 0.5), (0.0013, 0.14), (0.0045, 0.0)):
-        rings.append(_hat_ring(rxo - dr, ryo - dr, lambda a, dz=dz: brim_z(1.0, a) - BRIM_TH * dz))
-    # brim top (rim -> crown)
-    for t in (0.92, 0.72, 0.5, 0.28, 0.1, 0.0):
+    for dz in (0.80, 0.20):
+        rings.append(_hat_ring(lambda a: (rxo, ryo), lambda a, dz=dz: brim_z(1.0, a) - BRIM_TH * dz))
+    for t in (0.92, 0.5, 0.15, 0.0):
         rx, ry = _brim_r(t)
-        rings.append(_hat_ring(rx, ry, lambda a, t=t: brim_z(t, a)))
-    # crown wall: hidden under the band, then ~2 cm rows up to the top edge
-    zs = [BAND_Z[0] + 0.012, BAND_Z[1] - 0.010]
-    z_edge = CROWN_TOP - CROWN_ROUND
-    k = 4
-    zs += [BAND_Z[1] + (z_edge - BAND_Z[1]) * i / k for i in range(k + 1)]
+        rings.append(_hat_ring(lambda a, rx=rx, ry=ry: (rx, ry), lambda a, t=t: brim_z(t, a)))
+    # crown wall: hidden under the band, then ~1.1 cm rows up to the rounded top edge
+    zs = [BAND_Z[0] + 0.013, 1.831, 1.840, 1.849, 1.858, 1.867, 1.876, HAT_TOP - CROWN_ROUND]
     for z in zs:
-        rings.append(_hat_ring(*crown_r(z), z))
-    # rounded top edge
-    rx, ry = crown_r(CROWN_TOP)
+        rings.append(_hat_ring(lambda a, z=z: crown_r(z, a), z))
     c = CROWN_ROUND
-    rings.append(_hat_ring(rx - 0.29 * c, ry - 0.29 * c, CROWN_TOP - 0.29 * c))
-    rings.append(_hat_ring(rx - c, ry - c, CROWN_TOP))
+    rings.append(_hat_ring(lambda a: tuple(r - 0.29 * c for r in crown_r(HAT_TOP, a)), HAT_TOP - 0.29 * c))
+    rings.append(_hat_ring(lambda a: tuple(r - c for r in crown_r(HAT_TOP, a)), HAT_TOP))
     idx = [_add_ring(verts, r) for r in rings]
     for a, b in zip(idx, idx[1:]):
         faces += _bridge(a, b)
-    faces += _coons(idx[-1], verts, rot=4)
+    faces += _coons(idx[-1], verts, rot=5)
     verts = [_crown_shape(v) if v.z > BAND_Z[1] else v for v in verts]
     return lib.mesh_object("hat", verts, faces, topo="main")
 
 
 def build_band():
-    """Closed ribbon around the base of the crown."""
+    """Thin plain closed ribbon around the base of the crown."""
     z0, z1 = BAND_Z
-    zm = (z0 + z1) / 2
-    sect = [(-0.004, z0), (0.003, z0), (BAND_OFF, z0 + 0.003), (BAND_OFF, zm), (BAND_OFF, z1 - 0.003),
-            (0.003, z1), (-0.004, z1)]
-    verts, faces = [], []
-    idx = []
+    sect = [(-0.003, z0), (0.002, z0), (BAND_OFF, z0 + 0.002), (BAND_OFF, z1 - 0.002),
+            (0.002, z1), (-0.003, z1)]
+    verts, faces, idx = [], [], []
     for off, z in sect:
-        rx, ry = crown_r(z)
-        idx.append(_add_ring(verts, _hat_ring(rx + off, ry + off, z)))
+        idx.append(_add_ring(verts, _hat_ring(lambda a, z=z, off=off: tuple(r + off for r in crown_r(z, a)), z)))
     for k in range(len(sect)):
         faces += _bridge(idx[k], idx[(k + 1) % len(sect)])
     return lib.mesh_object("hat_band", verts, faces, topo="main")
 
 
-def _band_map(u, z, d, a0=-math.pi / 2):
-    """Local plate coords -> world: u along the band (arc length from plan angle a0), height z,
-    d out along the band normal measured from the band's outer face (at the band mid height)."""
-    rx, ry = crown_r((BAND_Z[0] + BAND_Z[1]) / 2)
-    rx, ry = rx + BAND_OFF, ry + BAND_OFF
-    r_mean = 0.5 * (rx + ry)
-    a = a0 + u / r_mean
-    nrm = V((math.cos(a) / rx, math.sin(a) / ry, 0.0)).normalized()
-    return V((rx * math.cos(a), HAT_CY + ry * math.sin(a), z)) + nrm * d
-
-
-def _diamond_plate(name, hw, hh, th, a0, zc, grid=(-1, -0.82, -0.55, 0, 0.55, 0.82, 1),
-                   frame=True, back=0.006):
-    """Diamond plate bent onto the band: rotated quad grid (s, t), raised frame border, recessed
-    field, chamfered outline, side walls running back `back` into the band / crown.  Open behind."""
-    S = grid
-    m = len(S)
-    verts, faces = [], []
-    top = [[None] * m for _ in range(m)]
-
-    def depth(s, t):
-        k = max(abs(s), abs(t))
-        if k >= 0.999:
-            return th * 0.55
-        if not frame:
-            return th * (1.0 - 0.25 * k)
-        if k >= 0.8:
-            return th
-        if k >= 0.5:
-            return th - 0.0013
-        return th - 0.0013 + 0.0009 * (1 - k / 0.5)          # slight boss in the middle
-    for j, t in enumerate(S):
-        for i, s in enumerate(S):
-            u = (s - t) * 0.5 * hw
-            w = (s + t) * 0.5 * hh
-            verts.append(_band_map(u, zc + w, depth(s, t), a0))
-            top[j][i] = len(verts) - 1
-    for j in range(m - 1):
-        for i in range(m - 1):
-            faces.append((top[j][i], top[j][i + 1], top[j + 1][i + 1], top[j + 1][i]))
-    outline = ([top[0][i] for i in range(m)] + [top[j][m - 1] for j in range(1, m)]
-               + [top[m - 1][i] for i in range(m - 2, -1, -1)] + [top[j][0] for j in range(m - 2, 0, -1)])
-    wall = []
-    for vi in outline:
-        p = verts[vi]
-        # same (u, w) pushed back by `back` along the band normal
-        rx, ry = crown_r((BAND_Z[0] + BAND_Z[1]) / 2)
-        q = V((p.x, p.y - HAT_CY, 0.0))
-        nrm = V((q.x / (rx + BAND_OFF) ** 2, q.y / (ry + BAND_OFF) ** 2, 0.0)).normalized()
-        verts.append(p - nrm * (back + th * 0.55))
-        wall.append(len(verts) - 1)
-    k = len(outline)
-    for i in range(k):
-        faces.append((outline[i], wall[i], wall[(i + 1) % k], outline[(i + 1) % k]))
-    return lib.mesh_object(name, verts, faces, topo="rigid", sharp_angle=30)
-
-
-def build_band_details():
-    objs = []
-    # front_head shows the diamond reaching well above the band, side_head keeps it near the band:
-    # centred a little above the band's middle
-    zc = 0.5 * (BAND_Z[0] + BAND_Z[1]) + 0.008
-    objs.append(_diamond_plate("hat_plaque", PLAQUE_HW, PLAQUE_HH, PLAQUE_TH, -math.pi / 2, zc))
-    p = _band_map(0.0, zc, PLAQUE_TH - 0.0008)
-    objs.append(lib.emblem_cross("hat_emblem", size=0.0105, thickness=0.0025, loc=p, normal=(0, -1, 0),
-                                 up=(0, 0, 1), long_tail=1.35))
-    studs = []
-    zm = (BAND_Z[0] + BAND_Z[1]) / 2
-    for side in (1, -1):
-        for k, deg in enumerate(STUD_ANGLES):
-            a = math.radians(deg) if side > 0 else math.pi - math.radians(deg)
-            studs.append(_diamond_plate(f"stud{side}{k}", 0.0075, 0.0085, 0.0026, a, zm,
-                                        grid=(-1, -0.4, 0.4, 1), frame=False, back=0.002))
-    objs.append(lib.join(studs, "hat_band_studs", topo="rigid"))
-    return objs
-
-
 # ------------------------------------------------------------------ face mask
-def mask_pt(th, z, out=0.0):
-    """Point on the plate's outer surface (+out along the surface normal, approx.).  th: angle across
-    the face (0 = front centre, + toward the character's left), z: height."""
-    return head_pt(-math.pi / 2 + th, z, grow=MASK_P + out)
+def mask_w(z):
+    return max(_cr(_MASK_W, z)[0], 1e-4)
 
 
-def mask_normal(th, z):
-    e = 1e-3
-    du = mask_pt(th + e, z) - mask_pt(th - e, z)
-    dv = mask_pt(th, z + e) - mask_pt(th, z - e)
-    nrm = du.cross(dv).normalized()
-    c = mask_pt(th, z)
-    return nrm if nrm.dot(V((c.x, c.y - HC.y, 0.0))) > 0 else -nrm
+def mask_y(x, z):
+    """Plate base surface (front-view coordinates x, z -> y)."""
+    w = mask_w(z)
+    u = min(abs(x) / w, 1.1)
+    p, c = _cr(_MASK_P, z)
+    return _cr(_MASK_YF, z)[0] + w * (p * u * u + (c - p) * u ** 8)
 
 
-def _th_of_x(x, z):
-    """Angle across the face whose plate point lies at lateral position x (front view)."""
-    rx = head_section(z)[0] + MASK_P
-    s = min(abs(x) / rx, 0.999) ** (_FACE_POW / 2.0)
-    return math.copysign(math.asin(s), x)
+def mask_n(x, z):
+    e = 1e-4
+    dx = (mask_y(x + e, z) - mask_y(x - e, z)) / (2 * e)
+    dz = (mask_y(x, z + e) - mask_y(x, z - e)) / (2 * e)
+    return V((dx, -1.0, dz)).normalized()
 
 
-def _slat_x(z):
-    k = (MASK_Z_TOP - z) / (MASK_Z_TOP - MASK_Z_TIP)
-    return SLAT_X[0] + (SLAT_X[1] - SLAT_X[0]) * k
+def mask_pt(x, z, h=0.0):
+    return V((x, mask_y(x, z), z)) + mask_n(x, z) * h
 
 
-def _edge_th(z):
-    """Half angle of the side edge: wide at the brow, narrower where the V begins."""
-    k = min(max((z - MASK_Z_SIDE) / (MASK_Z_TOP - MASK_Z_SIDE), 0.0), 1.0)
-    return MASK_TH_SIDE + (MASK_TH_TOP - MASK_TH_SIDE) * k
+class _VEdge:
+    """The V edge (front view) from the left rear side edge through the chin point to the right one,
+    by arc length: s in [-1, 1], 0 = chin point."""
+
+    def __init__(self, m=240):
+        zs = [MASK_TIP_Z + (MASK_SIDE_Z - MASK_TIP_Z) * i / m for i in range(m + 1)]
+        pts = [(mask_w(z) if i else 0.0, z) for i, z in enumerate(zs)]
+        acc = [0.0]
+        for a, b in zip(pts, pts[1:]):
+            acc.append(acc[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+        self.pts, self.acc = pts, acc
+
+    def __call__(self, s):
+        target = abs(s) * self.acc[-1]
+        k = 0
+        while k < len(self.acc) - 2 and self.acc[k + 1] < target:
+            k += 1
+        t = (target - self.acc[k]) / max(self.acc[k + 1] - self.acc[k], 1e-12)
+        (x0, z0), (x1, z1) = self.pts[k], self.pts[k + 1]
+        return V((math.copysign(x0 + (x1 - x0) * t, s), z0 + (z1 - z0) * t, 0.0))
 
 
-def _col_th(j, z):
-    """Column j (0 = centre .. MASK_NH = side edge, sign = side) at height z.  The inner columns are
-    straight and parallel to the slats (centre, half way, slat line); the outer ones fan out evenly
-    to the side edge, so they run parallel to it."""
-    sg = 1 if j >= 0 else -1
-    j = abs(j)
-    if j <= 2:
-        return _th_of_x(sg * _slat_x(z) * j / 2.0, z)
-    t0, t1 = _th_of_x(_slat_x(z), z), _edge_th(z)
-    f = (j - 2) / (MASK_NH - 2)
-    x0, x1 = _slat_x(z), mask_pt(t1, z).x
-    tx = _th_of_x(x0 + (x1 - x0) * f, z)           # even in front view ...
-    return sg * (0.5 * tx + 0.5 * (t0 + (t1 - t0) * f))   # ... blended with even on the surface
+def _mask_grid():
+    """Front-view (x, z) grid of the plate: Coons patch between top edge, rear side edges and V."""
+    vedge = _VEdge()
+    cols = [(-x, -s, j) for j, (x, s) in reversed(list(enumerate(_MASK_COLS))) if j] + \
+           [(x, s, j) for j, (x, s) in enumerate(_MASK_COLS)]
+    TL, TR = V((-MASK_XC, MASK_TOP_Z, 0)), V((MASK_XC, MASK_TOP_Z, 0))
+    SL, SR = vedge(-1.0), vedge(1.0)
+
+    def side(v, sg):
+        z = MASK_TOP_Z + (MASK_SIDE_Z - MASK_TOP_Z) * v
+        return V((sg * mask_w(z), z, 0))
+    grid, cls = [], []
+    for x, s, j in cols:
+        u = (x + MASK_XC) / (2 * MASK_XC)
+        top, bot = V((x, MASK_TOP_Z, 0)), vedge(s)
+        L = (top - bot).length
+        vt = [d / L for d in _ROWS_TOP]
+        vb = [1.0 - d / L for d in _ROWS_BOT]
+        vm = [vt[-1] + (vb[0] - vt[-1]) * (k + 1) / (N_MID + 1) for k in range(N_MID)]
+        col = []
+        for v in vt + vm + vb:
+            p = ((1 - v) * top + v * bot + (1 - u) * side(v, -1) + u * side(v, 1)
+                 - ((1 - u) * (1 - v) * TL + u * (1 - v) * TR + (1 - u) * v * SL + u * v * SR))
+            col.append((p.x, p.y))
+        grid.append(col)
+        cls.append(j)
+    return grid, cls
 
 
-def _v_edge_z(x):
-    """Bottom (V) edge height at lateral position x: straight V that bends up into the sides."""
-    xe = abs(mask_pt(MASK_TH_SIDE, MASK_Z_SIDE).x)
-    s = min(abs(x) / xe, 1.0)
-    return MASK_Z_TIP + (MASK_Z_SIDE - MASK_Z_TIP) * (0.75 * s + 0.25 * s ** 3)
+def _relief(j, r, nr):
+    """Offset of grid vertex (column class j = 0 centre .. 11 outline, row r of 0..nr)."""
+    if r <= 1 or r >= nr - 1 or j >= 10:
+        return H_RIM
+    if r == 2 or r == nr - 2 or j == 9:
+        return 0.0                                        # rim foot
+    if j <= 2:                                            # centre ridge, T cap, V channel
+        if r in (3, 4):
+            return H_CAP
+        if j == 0 and 5 <= r <= 7:
+            return H_SLOT
+        return H_RIDGE
+    if j <= 4:                                            # light grooves, sloped end near the chin
+        return H_FLOOR if r <= nr - 4 else H_SIDE
+    if j <= 6:
+        return H_SIDE                                     # side ridges
+    if r in (3, 4):
+        return H_LIGHT                                    # recess for the brow light
+    if r == nr - 4:
+        return H_CHEV                                     # chevron line parallel to the V edge
+    return 0.0
 
 
-def _col_bottom(j):
-    if abs(j) == MASK_NH:
-        return MASK_Z_SIDE
-    z = MASK_Z_SIDE
-    for _ in range(6):
-        z = _v_edge_z(mask_pt(_col_th(j, z), z).x)
-    return z
-
-
-def build_mask():
-    NR, NH = MASK_NR, MASK_NH
-    cols = list(range(-NH, NH + 1))
-    NC = len(cols)
-    verts, par, faces = [], [], []
-    G = [[None] * NC for _ in range(NR + 1)]
-    for c, j in enumerate(cols):
-        zb = _col_bottom(j)
-        for r in range(NR + 1):
-            z = MASK_Z_TOP + (zb - MASK_Z_TOP) * r / NR
-            th = _col_th(j, z)
-            verts.append(mask_pt(th, z))
-            par.append((th, z))
-            G[r][c] = len(verts) - 1
-    for r in range(NR):
-        for c in range(NC - 1):
-            faces.append((G[r][c], G[r][c + 1], G[r + 1][c + 1], G[r + 1][c]))
-    # rolled rim round the outline: crest, rounded outer edge, side wall back toward the face
-    loop = ([G[0][c] for c in range(NC)] + [G[r][NC - 1] for r in range(1, NR + 1)]
-            + [G[NR][c] for c in range(NC - 2, -1, -1)] + [G[r][0] for r in range(NR - 1, 0, -1)])
+def build_mask(surf):
+    grid, cls = _mask_grid()
+    nc, nr = len(grid), len(grid[0]) - 1
+    verts, faces = [], []
+    G = [[None] * (nr + 1) for _ in range(nc)]
+    for c in range(nc):
+        for r in range(nr + 1):
+            x, z = grid[c][r]
+            verts.append(mask_pt(x, z, _relief(cls[c], r, nr)))
+            G[c][r] = len(verts) - 1
+    for c in range(nc - 1):
+        for r in range(nr):
+            faces.append((G[c][r], G[c + 1][r], G[c + 1][r + 1], G[c][r + 1]))
+    # rolled outer edge + wall back into the head all round the outline
+    loop = ([(c, 0) for c in range(nc)] + [(nc - 1, r) for r in range(1, nr + 1)]
+            + [(c, nr) for c in range(nc - 2, -1, -1)] + [(0, r) for r in range(nr - 1, 0, -1)])
     m = len(loop)
-    cen = sum((verts[i] for i in loop), V()) / m
-    rims = [[], [], []]
-    for k in range(m):
-        i, ip, inx = loop[k], loop[k - 1], loop[(k + 1) % m]
-        p = verts[i]
-        nrm = mask_normal(*par[i])
+    pts = [verts[G[c][r]] for c, r in loop]
+    cen = sum(pts, V()) / m
+    roll, wall = [], []
+    for k, (c, r) in enumerate(loop):
+        p = pts[k]
+        nrm = mask_n(*grid[c][r])
         perp = []
-        for e in (p - verts[ip], verts[inx] - p):
+        for e in (p - pts[k - 1], pts[(k + 1) % m] - p):
             q = e.cross(nrm).normalized()
             perp.append(q if q.dot(p - cen) > 0 else -q)
         mit = (perp[0] + perp[1]).normalized()
-        sc = 1.0 / max(mit.dot(perp[0]), 0.35)
-        for ring, (d, h) in zip(rims, ((RIM[0], RIM[1]), (RIM[2], RIM[3]), (RIM[2], -MASK_T))):
-            verts.append(p + mit * (d * sc) + nrm * h)
-            ring.append(len(verts) - 1)
-    for a, b in zip([loop] + rims[:-1], rims):
-        faces += _bridge(a, b)
-    return lib.mesh_object("mask", verts, faces, topo="rigid", sharp_angle=35)
+        a = p + mit * 0.0010 - nrm * 0.0016
+        hit = surf.cast(a, -nrm, 0.05)
+        b = hit - nrm * 0.0012 if hit is not None else a - nrm * 0.004
+        verts.append(a)
+        roll.append(len(verts) - 1)
+        verts.append(b)
+        wall.append(len(verts) - 1)
+    faces += _bridge([G[c][r] for c, r in loop], roll)
+    faces += _bridge(roll, wall)
+    mask = lib.mesh_object("mask", verts, faces, topo="rigid", sharp_angle=35)
+    return mask, grid, cls
 
 
-def _slat(name, x0, z0, z1, nseg):
-    """Raised slat on the plate along the line x = x0 * _slat_x(z) / SLAT_X[0], from z0 down to z1:
-    flat top, chamfered top edges, sloped ends, closed underside sunk into the plate."""
-    sx = x0 / SLAT_X[0]
-    path = []
-    for k in range(nseg + 1):
-        z = z0 + (z1 - z0) * k / nseg
-        th = _th_of_x(sx * _slat_x(z), z)
-        path.append((mask_pt(th, z), mask_normal(th, z)))
-    hw, h, ch = SLAT_HW, SLAT_H, SLAT_CH
-    prof = [(-hw, -SLAT_SINK), (-hw, h - ch), (-hw + ch, h), (hw - ch, h), (hw, h - ch), (hw, -SLAT_SINK)]
-    rings = []
-    for k, (p, nrm) in enumerate(path):
-        tg = (path[min(k + 1, nseg)][0] - path[max(k - 1, 0)][0]).normalized()
-        bx = tg.cross(nrm).normalized()
-        nz = bx.cross(tg).normalized()
-        if nz.dot(nrm) < 0:
-            nz = -nz
-        rings.append([p + bx * u + nz * w for u, w in prof])
-        if k in (0, nseg):                       # sloped end: lower, narrower ring 3 mm further on
-            ext = -tg if k == 0 else tg
-            q = p + ext * 0.003
-            end = [q + bx * (u * 0.8) + nz * (w * 0.35 if w > 0 else w) for u, w in prof]
-            if k == 0:
-                rings.insert(0, end)
-            else:
-                rings.append(end)
+def build_lights(grid, cls, nr):
+    """Glowing slats (FBX material "Lights") as thin strips sunk into the plate's recesses."""
+    col = {j * (1 if k >= len(cls) // 2 else -1): k for k, j in enumerate(cls)}
+    up, down = 0.0006, 0.0009
+
+    def section(pa, pb, h, inset=0.0005):
+        (xa, za), (xb, zb) = pa, pb
+        d = math.hypot(xb - xa, zb - za)
+        t = min(inset / max(d, 1e-9), 0.3)
+        a = (xa + (xb - xa) * t, za + (zb - za) * t)
+        b = (xb + (xa - xb) * t, zb + (za - zb) * t)
+        return [mask_pt(*a, h + up), mask_pt(*b, h + up), mask_pt(*b, h - down), mask_pt(*a, h - down)]
+
+    def lerp2(p, q, t):
+        return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
     verts, faces = [], []
-    idx = [_add_ring(verts, r) for r in rings]
-    for a, b in zip(idx, idx[1:]):
-        faces += _bridge(a, b)
-    for r in (idx[0], idx[-1]):                  # hexagonal end caps -> 2 quads each
-        faces += [(r[0], r[1], r[4], r[5]), (r[1], r[2], r[3], r[4])]
-    return lib.mesh_object(name, verts, faces, topo="rigid", sharp_angle=30)
-
-
-def build_slats():
-    z_top = MASK_Z_TOP - 0.006
-    side_bot = _v_edge_z(SLAT_X[1]) + 0.011
-    slats = [_slat("slat_c", 0.0, z_top, MASK_Z_TIP + 0.017, 6)]
     for sg in (1, -1):
-        slats.append(_slat(f"slat_{sg}", sg * SLAT_X[0], z_top - 0.003, side_bot, 5))
-    return lib.join(slats, "mask_slats", topo="rigid")
+        c3, c4 = col[3 * sg], col[4 * sg]
+        _strip([section(grid[c3][r], grid[c4][r], H_FLOOR) for r in range(3, nr - 3)], verts, faces)
+        c7, c8, c9 = col[7 * sg], col[8 * sg], col[9 * sg]
+        _strip([section(grid[c][3], grid[c][4], H_LIGHT) for c in (c7, c8)]
+               + [section(lerp2(grid[c8][3], grid[c9][3], 0.55), lerp2(grid[c8][4], grid[c9][4], 0.55), H_LIGHT)],
+               verts, faces)
+    c0, cl, cr = col[0], col[-1], col[1]
+    hs = 0.5 * (H_SLOT + H_RIDGE)
+    _strip([section(lerp2(grid[c0][r], grid[cl][r], 0.55), lerp2(grid[c0][r], grid[cr][r], 0.55), hs - 0.0003,
+                    inset=0.0) for r in range(5, 8)], verts, faces)
+    return lib.mesh_object("mask_lights", verts, faces, topo="rigid", sharp_angle=30)
 
 
 # ------------------------------------------------------------------ entry point
 def build():
-    objs = [build_head(), build_hat(), build_band()]
-    objs += build_band_details()
-    objs += [build_mask(), build_slats()]
-    return objs
+    hv, hf = _head_mesh()
+    surf = _Surf(hv, hf)
+    head = build_head(hv, hf)
+    mask, grid, cls = build_mask(surf)
+    lights = build_lights(grid, cls, len(grid[0]) - 1)
+    return [head, build_ears(surf), build_hair(surf), build_hat(), build_band(), mask, lights]

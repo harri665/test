@@ -5,6 +5,8 @@
     python3 tools/preview.py arms legs --ghost        # with the mannequin as a faint ghost
     python3 tools/preview.py all --full -o renders/turnaround.png
     python3 tools/preview.py skirt --zoom 0.15,-0.3,0.3,0.25   # close-up: centre x,y,z + half height
+    python3 tools/preview.py all --full --solid --pose tpose    # posed by infantry/pose.py (T-pose)
+    python3 tools/preview.py all --pose tpose --solid --zoom 0.27,0,1.53,0.13 --views "FRONT,BACK,TOP,3/4"
 
 Prints per-object topology stats and a budget check.  Exit code 1 if a part fails to build.
 """
@@ -27,7 +29,11 @@ from infantry.parts import PARTS  # noqa: E402
 
 TINT = {"main": (0.42, 0.43, 0.46), "support": (0.30, 0.38, 0.55), "rigid": (0.55, 0.50, 0.36),
         "ghost": (0.16, 0.16, 0.18)}
-VIEWS = {"FRONT": (0, -1, 0), "LEFT SIDE": (1, 0, 0), "BACK": (0, 1, 0), "3/4": (0.65, -0.76, 0.25)}
+VIEWS = {"FRONT": (0, -1, 0), "LEFT SIDE": (1, 0, 0), "BACK": (0, 1, 0), "3/4": (0.65, -0.76, 0.25),
+         # extra views (not in the default sheet): close-ups of the posed shoulders / underarms
+         "TOP": (0, 0.0001, 1), "BOTTOM": (0, -0.0001, -1), "RIGHT SIDE": (-1, 0, 0),
+         "3/4 BACK": (0.65, 0.76, 0.25), "RIGHT 3/4": (-0.65, -0.76, 0.25)}
+DEFAULT_VIEWS = ["FRONT", "LEFT SIDE", "BACK", "3/4"]
 
 
 def material(kind):
@@ -180,7 +186,7 @@ def render_views(objs, out, full=False, zoom=None, res=(720, 960), samples=12, v
     sc.collection.objects.link(sun)
     tiles = []
     tmp = tempfile.mkdtemp(prefix="infantry_")
-    for label in (views or list(VIEWS)):
+    for label in (views or DEFAULT_VIEWS):
         d = Vector(VIEWS[label]).normalized()
         cam.location = centre + d * 10
         cam.rotation_euler = (-d).to_track_quat("-Z", "Y").to_euler()
@@ -213,11 +219,15 @@ def main():
     ap.add_argument("--views", default=None, help="comma list of FRONT,LEFT SIDE,BACK,3/4")
     ap.add_argument("--no-render", action="store_true")
     ap.add_argument("--solid", action="store_true", help="no wireframe overlay (judge silhouette / shading)")
-    ap.add_argument("--res", default="720x960")
+    ap.add_argument("--res", default=None, help="WxH per view (default 720x960; 1100x1000 for a full posed view)")
+    ap.add_argument("--pose", default=None, help="pose the built parts with infantry/pose.py, e.g. 'tpose'")
     a = ap.parse_args()
     names = PARTS if a.parts == ["all"] else a.parts
     lib.reset_scene()
     objs, failed = build_parts(names)
+    if a.pose:
+        from infantry import pose
+        pose.apply_pose(objs, a.pose)
     report(objs)
     if failed:
         print("FAILED PARTS:", failed)
@@ -226,7 +236,8 @@ def main():
     if not a.no_render and objs:
         out = a.out or os.path.join(ROOT, "renders", "preview_" + "_".join(names if len(names) < 4 else ["all"]) + ".png")
         render_views(objs, out, a.full, [float(x) for x in a.zoom.split(",")] if a.zoom else None,
-                     tuple(int(x) for x in a.res.split("x")), views=a.views.split(",") if a.views else None,
+                     tuple(int(x) for x in (a.res or ("1100x1000" if a.pose and a.full else "720x960")).split("x")),
+                     views=a.views.split(",") if a.views else None,
                      wire=not a.solid)
     sys.exit(1 if failed else 0)
 
