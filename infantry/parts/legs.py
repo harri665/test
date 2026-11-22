@@ -1,13 +1,9 @@
 """Legs (round 2): baggy bloused trousers, chunky splayed ankle boots with lugged soles, straps, buckles.
 
 Objects (build() order)
-    trousers                 main     pelvis (40) -> crotch gusset -> 2 thigh tubes (24) -> all-quad 24 -> 36
-                                      transition band (hidden under the skirt), down to the knee loops
-    trouser_knee_L / _R      support  the 3 tight knee loops (36 around, one broad soft fold over the front)
-    trouser_blouse_L / _R    main     bloused lower leg (36 around): 2 stylised horizontal fold bands that wrap
-                                      the leg (tilted, sagging to the front, edge loops along each crest and
-                                      crease), a strong rounded bottom roll with a tight crease tucked under it,
-                                      slim plain gaiter tucked into the boot
+    trousers                 main     pelvis (40) -> crotch gusset -> 2 thigh tubes (24), down to the knee loops
+    trouser_knee_L / _R      support  the 3 tight knee loops (own object, shares its boundary rings)
+    trouser_blouse_L / _R    main     bloused lower leg: 3 sagging fold rolls, roll-over hem, tucked into the boot
     boot_upper_L / _R        main     cuff + shaft + foot (foot extruded from a front patch of the shaft), toe cap
     boot_sole_L / _R         rigid    lugged outsole + heavy welt, heel block, arch notch
     boot_straps_L / _R       main     tongue + lace bars, ankle/instep strap (diagonal, square buckle),
@@ -188,9 +184,6 @@ def lower_c(z):
 
 # ================================================================== TROUSERS
 NP, NL = 40, 24                 # pelvis ring / leg ring vertex counts (leg = NP/2 - 1 pelvis verts + 5 gusset)
-NK = 36                         # knee + blouse ring count (~1.4 cm at the knee, ~1.75 cm round the blouse)
-SPLIT = set(range(1, NL, 4))    # thigh-ring segments split 1 -> 3 in the 24 -> 36 transition band
-assert NL + 2 * len(SPLIT) == NK
 GAP = 0.016                     # inner thighs never get closer to the mirror plane than this
 CROTCH_Z = S.TORSO[0][0]
 Z_SPLIT = CROTCH_Z + 0.015      # last full pelvis ring; the crotch gusset hangs below it
@@ -222,8 +215,10 @@ BLOUSE_ROWS = [
     (0.359, 0.1000, 0.15), (0.336, 0.1000, 0.35), (0.316, 0.0985, 0.60), (0.303, 0.0945, 0.85),
     (0.2955, 0.0870, 1.00), (0.2935, 0.0770, 1.00),                                          # rounded hem, underside
 ]
-# (round 4: BLOUSE_ROWS is now only the smooth profile; the actual rows, folds and the gaiter tucked into
-#  the boot are FOLD_ROWS / TUCK_ROWS further down.)
+# then a slim gathered gaiter round the shin, tucked over the boot rim into the boot:
+# (z, offset from the boot shaft surface, sag weight)
+TUCK_ROWS = [(0.2890, 0.0060, 0.9), (0.2740, 0.0042, 0.4), (0.2610, 0.0032, 0.0), (0.2505, 0.0026, 0.0),
+             (0.2490, -0.0006, 0.0), (0.2470, -0.0044, 0.0), (0.2400, -0.0055, 0.0), (0.2280, -0.0060, 0.0)]
 SAG = 0.008                     # how far the hem droops (most at the front)
 
 
@@ -291,33 +286,13 @@ def _pelvis_pt(i, z):
     return pu.lerp(V((sx, sy, z - dz)), s)
 
 
-def _leg_ring(z, side, k=None, r=None, sag=0.0, n=NL, folds=True, ths=None):
+def _leg_ring(z, side, k=None, r=None, sag=0.0):
     r = _thigh_r(z) if r is None else r
     pts = []
-    for th in (ths or [TAU * j / n for j in range(n)]):
-        p = trouser_pt(z, r, th, side, dip=_DIP.get(k, 0.0), seat=_SEAT.get(k, 0.0), sag=sag, folds=folds)
+    for j in range(NL):
+        p = trouser_pt(z, r, TAU * j / NL, side, dip=_DIP.get(k, 0.0), seat=_SEAT.get(k, 0.0), sag=sag)
         pts.append(V((p.x * side, p.y, p.z)))
     return pts
-
-
-def _transition(mb, top, bot):
-    """All-quad band from the NL-vertex thigh ring `top` to the NK-vertex ring `bot` (both closed, same
-    winding, index 0 = outer side).  Segments in SPLIT become 3 segments each (3-to-1 pattern:
-    two mid-height vertices, four quads)."""
-    P = mb.v
-    b = 0
-    for j in range(NL):
-        t0, t1 = top[j], top[(j + 1) % NL]
-        if j in SPLIT:
-            b0, b1, b2, b3 = (bot[(b + k) % NK] for k in range(4))
-            m1 = mb.add([(P[b1] + P[t0].lerp(P[t1], 0.36)) * 0.5])[0]
-            m2 = mb.add([(P[b2] + P[t0].lerp(P[t1], 0.64)) * 0.5])[0]
-            mb.f += [(t0, m1, b1, b0), (m1, m2, b2, b1), (m2, t1, b3, b2), (t0, t1, m2, m1)]
-            b += 3
-        else:
-            mb.f.append((t0, t1, bot[(b + 1) % NK], bot[b % NK]))
-            b += 1
-    assert b == NK
 
 
 def build_trousers():
@@ -350,7 +325,8 @@ def build_trousers():
         ring = [pel(j) for j in range(0, hb)] + bridge + [pel(j) for j in range(hf + 1, NP)]
         assert len(ring) == NL
         base = [mb.v[i].copy() for i in ring]
-        for k, z in enumerate(THIGH_Z[:-1]):
+        pts = None
+        for k, z in enumerate(THIGH_Z):
             pts = _leg_ring(z, side, k)
             w = _UNTWIST.get(k, 1.0)
             for j, p in enumerate(pts):
@@ -358,11 +334,6 @@ def build_trousers():
             new = mb.add(pts)
             mb.strip(ring, new, closed=True)
             ring = new
-        # last thigh band: 24 -> 40 vertices (8 all-quad 1->3 splits), so the knee + blouse get the
-        # ring density their wrinkles need.  Hidden under the coat skirt / under skirt.
-        pts = _leg_ring(THIGH_Z[-1], side, len(THIGH_Z) - 1, n=NK)
-        bottom = mb.add(pts)
-        _transition(mb, ring, bottom)
         bottoms[side] = pts
     return mb.obj("trousers", "main", sharp_angle=75), bottoms
 
@@ -371,112 +342,20 @@ def _knee_r(z):
     return _lerp(_thigh_r(KNEE_ROWS[0]), BLOUSE_ROWS[0][1] - 0.006, (KNEE_ROWS[0] - z) / (KNEE_ROWS[0] - KNEE_ROWS[-1]))
 
 
-# ------------------------------------------------------------------ stylised folds (round 4)
-# Reference (front_legs / side_legs / back_legs): a full, slightly boxy blouse crossed by FEW, BIG, clean
-# horizontal fold bands that wrap the leg, tilted a little and sagging toward the front, and a strong
-# rounded roll at the bottom with a tight crease tucked under it into the slim gaiter.  The folds are
-# built into the ring radii / heights themselves: every crest and crease is an edge loop that follows the
-# fold line (tilt + front sag), with tight support loops at each fold and even ~2 cm spacing between.
-# fold lines: (sag toward the front, tilt amplitude, tilt phase deg) per side.  Heights are in the rows.
-FOLD_LINES = {
-    "K": dict(sag=0.000, tilt=0.000, ph=(0, 0)),         # knee loops: level
-    "F1": dict(sag=0.009, tilt=0.0035, ph=(20, 150)),    # upper band, mostly under the coat skirt
-    "F2": dict(sag=0.016, tilt=0.0060, ph=(-30, 200)),   # main band, just below the skirt points
-    "R": dict(sag=0.011, tilt=0.0035, ph=(10, 170)),     # bottom roll + the crease tucked under it
-}
-# blouse rows below the knee loops: (nominal z, radial offset from the smooth profile, fold line or None).
-# Within a fold the cloth swells gently toward the crest, rounds over and steps in sharply at the crease
-# (a silhouette step), then returns to the flat profile.  "abs" rows give the roll's underside radius.
-FOLD_ROWS = [
-    (0.490, 0.0000, None), (0.468, 0.0000, None),
-    (0.447, 0.0004, "F1"), (0.437, 0.0016, "F1"), (0.4305, 0.0012, "F1"), (0.4250, -0.0042, "F1"),
-    (0.4190, -0.0022, "F1"),
-    (0.401, 0.0000, None),
-    (0.387, 0.0008, "F2"), (0.377, 0.0034, "F2"), (0.3700, 0.0030, "F2"), (0.3640, -0.0055, "F2"),
-    (0.3580, -0.0030, "F2"),
-    (0.343, 0.0000, None),
-    (0.329, 0.0005, "R"), (0.319, 0.0040, "R"), (0.3100, 0.0062, "R"), (0.3025, 0.0045, "R"),
-    (0.2965, ("abs", -0.0090), "R"), (0.2940, ("abs", -0.0215), "R"),
-]
-# slim gaiter tucked over the boot rim: (z, offset from the boot shaft surface, share of the roll's sag)
-TUCK_ROWS = [(0.2895, 0.0070, 1.0), (0.2780, 0.0058, 0.5), (0.2640, 0.0045, 0.15), (0.2505, 0.0026, 0.0),
-             (0.2490, -0.0006, 0.0), (0.2470, -0.0044, 0.0), (0.2300, -0.0060, 0.0)]
-# one broad, soft fold over the front of the knee: (knee row index, radial offset at the very front)
-KNEE_FOLD = {2: -0.0030, 3: 0.0018}
-
-_PROF = [_catmull(BLOUSE_ROWS, k * 0.05) for k in range(0, 161)]       # smooth blouse profile, top -> hem
-_PROF_Z = sorted((z, r) for z, r, _ in _PROF)
-
-
-def _r_base(z):
-    """Smooth blouse radius (no folds) at nominal height z: knee loops -> blouse profile."""
-    z0, r0 = KNEE_ROWS[-1], _knee_r(KNEE_ROWS[-1])
-    if z >= BLOUSE_ROWS[0][0]:
-        return _lerp(BLOUSE_ROWS[0][1], r0, _sstep((z - BLOUSE_ROWS[0][0]) / (z0 - BLOUSE_ROWS[0][0])))
-    return _interp(_PROF_Z, z)
-
-
-def _front(th):
-    """1 at the very front of the leg (th = 270 deg), 0 at the back."""
-    return (0.5 - 0.5 * math.sin(th)) ** 1.5
-
-
-def _line_dz(g, th, side):
-    """Height offset of fold line g at angle th: sag toward the front + a slight tilt (per side)."""
-    if g is None:
-        return 0.0
-    f = FOLD_LINES[g]
-    ph = math.radians(f["ph"][0 if side > 0 else 1])
-    return -f["sag"] * _front(th) + f["tilt"] * math.cos(th - ph)
-
-
-def _depth(th, side, g):
-    """How strongly a fold shows at angle th: strongest at the front / outer side where the cloth sags,
-    softer on the inner side, with a slow per-side wobble so the legs don't mirror."""
-    seed = {"F1": 0.7, "F2": 2.1, "R": 4.0, "K": 0.0}[g] + (0.0 if side > 0 else 1.9)
-    return 0.52 + 0.48 * _front(th) + 0.14 * math.cos(th) + 0.10 * math.sin(2 * th + seed)
-
-
-def _row_dz(i, th, side):
-    """Height offset of FOLD_ROWS[i] at th: its own fold line, or a blend of the neighbouring lines."""
-    z, _, g = FOLD_ROWS[i]
-    if g is not None:
-        return _line_dz(g, th, side)
-    up = [(KNEE_ROWS[-1], "K")] + [(r[0], r[2]) for r in FOLD_ROWS[:i] if r[2]]
-    dn = [(r[0], r[2]) for r in FOLD_ROWS[i + 1:] if r[2]]
-    (za, ga), (zb, gb) = up[-1], dn[0]
-    return _lerp(_line_dz(ga, th, side), _line_dz(gb, th, side), (za - z) / (za - zb))
-
-
 def build_knee_and_blouse(side, top_ring):
-    """Knee band (support) + bloused lower leg (main) for one side.  Both share their boundary ring.
-    Rings are NK around; the folds are shaped by each ring's radius and tilt (edge loops along the folds)."""
+    """Knee band (support) + bloused lower leg (main) for one side.  Both share their boundary ring."""
+    knee = [top_ring] + [_leg_ring(z, side, r=_knee_r(z)) for z in KNEE_ROWS[1:]]
     sfx = "L" if side > 0 else "R"
-    ths = [TAU * j / NK for j in range(NK)]
-
-    def mk(z, r, th, dz=0.0):
-        p = trouser_pt(z + dz, r, th, side, folds=False)
-        return V((p.x * side, p.y, p.z))
-    knee = [top_ring]
-    for k, z in enumerate(KNEE_ROWS[1:], 1):
-        a = KNEE_FOLD.get(k, 0.0)
-        knee.append([mk(z, _knee_r(z) + a * _front(th) ** 1.3, th) for th in ths])
     knee_ob = lib.lofted("trouser_knee_" + sfx, knee, topo="support", sharp_angle=75)
     rings = [knee[-1]]
-    r_lip = _r_base(0.316)
-    for i, (z, dr, g) in enumerate(FOLD_ROWS):
+    for z, r, sag in BLOUSE_ROWS:
+        rings.append(_leg_ring(z, side, r=r, sag=sag))
+    for z, d, sw in TUCK_ROWS:
         ring = []
-        for th in ths:
-            if isinstance(dr, tuple):
-                r = r_lip + dr[1] * (0.85 + 0.15 * _depth(th, side, g))
-            else:
-                r = _r_base(z) + dr * (_depth(th, side, g) if g else 1.0)
-            ring.append(mk(z, r, th, _row_dz(i, th, side)))
-        rings.append(ring)
-    for z, d, w in TUCK_ROWS:
-        ring = []
-        for th in ths:
-            p = boot_rel_pt(z + w * _line_dz("R", th, side), d, th)
+        for j in range(NL):
+            th = TAU * j / NL
+            p = boot_rel_pt(z, d, th)
+            p.z -= sw * SAG * _sag(th, side, 0.2935)
             ring.append(V((p.x * side, p.y, p.z)))
         rings.append(ring)
     blouse = lib.lofted("trouser_blouse_" + sfx, rings, topo="main", sharp_angle=75)
