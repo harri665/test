@@ -80,6 +80,7 @@ U_OFF, U_GAP_X, U_GAP_Y = 0.018, 0.040, 0.028
 U_SLIT_X = 0.003
 U_COLS = [(270.0, 325.0, 12), (325.0, 60.0 + 360.0, 8), (60.0 + 360.0, 450.0, 5)]   # (from, to, n) deg
 U_SEAM_X = 0.058                    # seam lines at x = +-this at the hem, radiating from the belt
+U_SEAM_TOP = 0.950                  # (hidden under the front panels above this)
 
 # trouser outer envelope from the legs author (z: max|x|, y-front, y-back); the under skirt keeps
 # U_CLEAR outside it and the coat keeps COAT_OVER_UNDER outside the under skirt
@@ -124,7 +125,7 @@ _TOP_B = _bare(Z_TOP)
 
 
 def _a_lift(z, flare=True):
-    return (A_LIFT[0] + (A_LIFT[1] - A_LIFT[0]) * _sstep(BELT_LO + 0.003, BELT_LO - 0.030, z)
+    return (A_LIFT[0] + (A_LIFT[1] - A_LIFT[0]) * _sstep(BELT_LO + 0.003, BELT_LO - 0.020, z)
             + (A_LIFT[2] * _sstep(1.0, 0.72, z) if flare else 0.0))
 
 
@@ -395,10 +396,11 @@ def _trim(name, panel, path):
             da, dz = (g22 * b1 - g12 * b2) / det, (g11 * b2 - g12 * b1) / det
             a0, z0 = Q[i]
             ring = []
+            fz = 0.35 + 0.65 * _sstep(BELT_LO + 0.005, BELT_LO - 0.030, z0)   # thin under the belt
             for s, h in T_PROFILE:
                 s = min(s, lim)
                 q, _, _, nq = panel.frame(a0 + da * s, z0 + dz * s)
-                ring.append(q + nq * h)
+                ring.append(q + nq * h * fz)
             rings.append(ring)
         parts.append(lib.lofted(f"{name}_{piece}", rings, closed=True, cap_start=True, cap_end=True, topo="main"))
     if len(parts) == 1:
@@ -424,14 +426,14 @@ def _front_out_x(z):
     return _smax(FRONT_OUT_MIN, FRONT_CORNER[0] + FRONT_OUT_SLOPE * (FRONT_CORNER[1] - z), 0.01)
 
 
-def _back_out_x(z, x=BACK_OUT_X):
-    return min(x, 0.8 * section(z)[1])
+def _back_out_x(z, x=BACK_OUT_X, frac=0.8):
+    return min(x, frac * section(z)[1])
 
 
 def _lap_lift_z(z):
     """Lift of the overlapping (wearer's right) front panel near the centre: small in the belt
     zone, full on the buttoned overlap, gone once the panels have parted."""
-    return ((0.002 + (LAP_LIFT - 0.002) * _sstep(BELT_LO + 0.003, BELT_LO - 0.025, z))
+    return ((0.002 + (LAP_LIFT - 0.002) * _sstep(BELT_LO + 0.003, BELT_LO - 0.020, z))
             * (1.0 - _sstep(LAP_CUT[1] + 0.005, LAP_CUT[1] - 0.045, z)))
 
 
@@ -491,12 +493,12 @@ def side_a():
 
 
 def _tier_lift(z):
-    return _a_lift(z) + TIER_LIFT[0] + (TIER_LIFT[1] - TIER_LIFT[0]) * _sstep(BELT_LO + 0.003, BELT_LO - 0.030, z)
+    return _a_lift(z) + TIER_LIFT[0] + (TIER_LIFT[1] - TIER_LIFT[0]) * _sstep(BELT_LO + 0.003, BELT_LO - 0.020, z)
 
 
 def _tier_edges():
     e0 = lambda z: D(TIER_FRONT_A - 360.0)  # noqa: E731
-    e1 = lambda z: _angle_for_x(_back_out_x(z, TIER_BACK_X), z, False, _tier_lift(z))  # noqa: E731
+    e1 = lambda z: _angle_for_x(_back_out_x(z, TIER_BACK_X, 0.7), z, False, _tier_lift(z))  # noqa: E731
     hem = lambda u: HIP_TIER[0] + (HIP_TIER[1] - HIP_TIER[0]) * u  # noqa: E731
     return e0, e1, hem
 
@@ -559,7 +561,7 @@ def _under_seam(name):
     pts, nrm = [], []
     a_hem = math.tau - math.acos(U_SEAM_X / section(UNDER_HEM, "under")[1])
     for i in range(12):
-        z = SLIT_TOP + 0.02 + (UNDER_HEM + 0.006 - SLIT_TOP - 0.02) * i / 11
+        z = U_SEAM_TOP + (UNDER_HEM + 0.006 - U_SEAM_TOP) * i / 11
         p = surf(a_hem, z, 0.0, "under")
         q = surf(a_hem + 1e-3, z, 0.0, "under")
         r = surf(a_hem, z + 1e-3, 0.0, "under")
@@ -642,7 +644,7 @@ def _emblem_local(name, kind, s, out):
     return lib.join(pieces, name, topo="rigid")
 
 
-def _emblem(name, panel, x, z, size, tilt, front, kind, clear=T_RISE + 0.0006):
+def _emblem(name, panel, x, z, size, tilt, front, kind, clear=T_RISE + 0.0015):
     """Rigid emblem on the panel at (x, z), aligned to the cloth normal; it rides just above the
     raised borders it overlaps (like the reference, whose emblems reach over the binding)."""
     a = _angle_for_x(x, z, front)
@@ -665,6 +667,7 @@ def _emblem(name, panel, x, z, size, tilt, front, kind, clear=T_RISE + 0.0006):
         b1, b2 = pa.dot(d), pz.dot(d)
         da, dz = (g22 * b1 - g12 * b2) / det, (g11 * b2 - g12 * b1) / det
         h = max(h, (panel.P(a + da, z + dz) - p0).dot(n))
+    h = max(h, -0.001)                              # it rides on the borders: no deep sink
     m = Matrix((right, up, n)).transposed().to_4x4()
     ob.data.transform(Matrix.Translation(p0 + n * (h + clear)) @ m)
     ob.data.update()
