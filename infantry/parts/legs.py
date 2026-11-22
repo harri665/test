@@ -917,14 +917,9 @@ def build_straps(upper, counter, side_rows):
     """-> (straps MB [main], hardware MB [rigid]) -- all in the boot's local frame."""
     sm, hw = MB(), MB()
     bvh = _bvh([upper, counter])
-    a = band(sm, bvh, path_frames(bvh, STRAP_A, subdiv=2), 0.040, 0.0058, bevel=0.0012)
+    band(sm, bvh, path_frames(bvh, STRAP_A, subdiv=2), 0.040, 0.0058, bevel=0.0012)
     bvh = _bvh([upper, counter, sm])
-    b = band(sm, bvh, path_frames(bvh, STRAP_B, subdiv=2), 0.046, 0.0062, bevel=0.0012)
-    # stepped end tabs on the outer ends (FBX: small square plates where the straps end)
-    for secs, wd in ((a, 0.030), (b, 0.034)):
-        bvh = _bvh([upper, counter, sm])
-        tab = [secs[k][0] - secs[k][3] * 0.002 for k in (-7, -5, -3)]
-        band(sm, bvh, path_frames(bvh, tab, subdiv=1), wd, 0.0034, bevel=0.0008)
+    band(sm, bvh, path_frames(bvh, STRAP_B, subdiv=2), 0.046, 0.0062, bevel=0.0012)
     # wrapped ankle cuff: closed crisp band on the slim lower leg, square buckle on the outer side
     z0, z1 = CUFF_Z
     d_in, d_out, ch = 0.0015, 0.0064, 0.0013

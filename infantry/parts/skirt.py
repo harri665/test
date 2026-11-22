@@ -47,8 +47,8 @@ BEV_W, BEV_H = 0.006, 0.45          # chamfer: width along the face, depth as a 
 ROW_H = 0.036                       # target row spacing below the belt rows
 
 # cone below the hips (measured on the FBX, re-based on our body): z, rx, ry_front, ry_back of layer 0
-CONE = [(1.300, 0.112, 0.100, 0.100), (1.150, 0.135, 0.120, 0.120), (1.000, 0.172, 0.135, 0.140),
-        (0.800, 0.228, 0.142, 0.172), (0.600, 0.290, 0.150, 0.212), (0.450, 0.330, 0.155, 0.245),
+CONE = [(1.300, 0.112, 0.100, 0.100), (1.150, 0.135, 0.120, 0.120), (1.000, 0.172, 0.135, 0.148),
+        (0.800, 0.228, 0.142, 0.177), (0.600, 0.290, 0.150, 0.212), (0.450, 0.330, 0.155, 0.245),
         (0.300, 0.355, 0.160, 0.270), (0.150, 0.375, 0.165, 0.285)]
 
 # trouser outer envelope (z: max|x|, y-front, y-back) measured on the legs mesh; the inner face of

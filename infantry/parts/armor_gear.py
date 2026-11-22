@@ -43,7 +43,7 @@ DEG = math.degrees
 # ============================================================================ constants
 # --- C7 shoulder board (left).  Underside z(x, y) = BD_Z0 - BD_SLOPE (x - BD_X0) - BD_ARCH (y - BD_YC)^2
 #     (the coat shoulder dome measures z 1.587 / 1.579 / 1.562 at x 0.16 / 0.20 / 0.24, y 0)
-BD_X0, BD_X1 = 0.160, 0.276       # inner end (beside the collar) .. outer end (overhangs the arm)
+BD_X0, BD_X1 = 0.165, 0.278       # inner end (beside the collar) .. outer end (overhangs the arm)
 BD_Y0, BD_Y1 = -0.090, 0.088      # front .. back edge (FBX: a long board front-to-back, ~9 x 17 cm)
 BD_YC = -0.008
 BD_Z0 = 1.6045
