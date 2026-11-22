@@ -78,7 +78,7 @@ CLOTH = dict(
 )
 
 # quad budget per part file (whole character ceiling: 31k quads / 62k triangles)
-BUDGET = dict(head_hat=2600, torso_coat=5000, arms=6800, armor_gear=5000, skirt=6200, legs=6200)
+BUDGET = dict(head_hat=2600, torso_coat=5000, arms=4800, cuffs=2200, armor_gear=5000, skirt=6200, legs=6200)
 # v4: arms/legs got room for real wrinkle geometry; total must stay <= 31k quads
 
 
