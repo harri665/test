@@ -32,7 +32,7 @@ BELT_LO = C["belt_z"][0]
 BELT_CLEAR = 0.036                  # DETAIL_PASS v2 seam: inside the belt zone nothing beyond bare + this
 Z_ROW1 = BELT_LO + 0.005            # first edge loop just under the belt
 BELT_ROWS = (Z_TOP, 1.212, Z_ROW1, BELT_LO - 0.015)   # dense loops through the belt zone for lifted layers
-LIFT_RAMP = (BELT_LO - 0.015, BELT_LO - 0.040)        # lifted layers stay flat until just below the belt
+LIFT_RAMP = (BELT_LO - 0.020, BELT_LO - 0.045)        # lifted layers stay flat until just below the belt
 Z_HEM = C["skirt_hem_z"]
 Z_TIP = C["skirt_tip_z"]
 HEM_RX, HEM_RY, HEM_RYB = C["skirt_hem_rx"], C["skirt_hem_ry"], C["skirt_hem_ry_back"]
@@ -55,7 +55,7 @@ A_GAP_F, FRONT_UNDER_A, A_BACK_X = 0.003, 0.025, 0.150   # layer A starts at the
 # belt, buttoned twice, then its edge swings into the inverted V
 LAP_X, LAP_LIFT, LAP_CUT = 0.035, 0.013, (1.118, 1.062)
 UNDER_EDGE_X = 0.008                # left panel's hidden edge under the lap
-BUTTONS = [(0.014, 1.160), (0.014, 1.112)]     # (x, z) on the lap, final coordinates
+BUTTONS = [(0.014, 1.148), (0.014, 1.104)]     # (x, z) on the lap, final coordinates
 BUTTON_R = 0.012
 # side layers: side view hems run front-high -> back-low (all of them)
 SIDE_A = dict(tip=30.0, tip_z=0.420, front_z=0.515, back_z=0.470, top=Z_TOP)
@@ -168,8 +168,9 @@ def _trouser_req(z):
     Measured on the legs mesh: with the depth kept >= the envelope depth + 1.2 cm (pelvis) / + 4 cm
     (thighs), the width the under skirt needs is the envelope width + ~1.5 %."""
     mx, yf, yb = _env(z)
-    dy = 0.012 + 0.030 * _sstep(1.00, 0.92, z)        # thighs: extra depth keeps the width need small
-    return mx * 1.015 + U_CLEAR, -yf + dy, yb + dy
+    t = _sstep(1.13, 1.06, z)                         # at the waist: exactly spec's torso + 0.018 layering
+    dy = 0.008 + 0.004 * t + 0.030 * _sstep(1.00, 0.92, z)   # thighs: extra depth keeps the width need small
+    return mx * (1.0 + 0.015 * t) + U_CLEAR - 0.002 * (1 - t), -yf + dy, yb + dy
 
 
 _RAW, _REQ = {}, {}
@@ -404,7 +405,7 @@ def _trim(name, panel, path):
             da, dz = (g22 * b1 - g12 * b2) / det, (g11 * b2 - g12 * b1) / det
             a0, z0 = Q[i]
             ring = []
-            fz = 0.35 + 0.65 * _sstep(LIFT_RAMP[0], LIFT_RAMP[1] - 0.005, z0)   # thin in / just under the belt
+            fz = 0.35 + 0.65 * _sstep(LIFT_RAMP[0] - 0.005, LIFT_RAMP[1] - 0.010, z0)   # thin in / just under the belt
             for s, h in T_PROFILE:
                 s = min(s, lim)
                 q, _, _, nq = panel.frame(a0 + da * s, z0 + dz * s)
@@ -764,7 +765,7 @@ def build():
     b_l = _sheet("skirt_back_L", bp)
     path = _path_main(bp, k_out)
     k_vent = next(k for k in range(bp.nr + 1) if bp.Q[k][0][1] < VENT_TOP + 0.04)
-    path = [p for p in path if not (p[1] == 0 and 0 < p[0] < k_vent and p[0] % 2)]   # straight part: every 2nd
+    path = [p for p in path if not (p[1] == 0 and 2 < p[0] < k_vent and p[0] % 2)]   # straight part: every 2nd
     pairs += [b_l, _trim("skirt_back_trim_L", bp, path)]
     pairs.append(_emblem("skirt_emblem_back_L", bp, *EMB_BACK, front=False, kind="back"))
     pairs.append(_emblem("skirt_emblem_vent_L", bp, *EMB_VENT, front=False, kind="vent"))

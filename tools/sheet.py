@@ -67,13 +67,13 @@ def frame(draw, box, color=(70, 66, 58), width=2):
 def callouts():
     S = spec
     return [
-        ("SHOULDER / ARMPIT FLOW", ["16-vert seam shared by coat", "and sleeve; plate + guard"],
+        ("SHOULDER / ARMPIT FLOW", ["16-vert seam shared by coat", "and sleeve; strap + shell guard"],
          (S.SHOULDER.x + 0.02, -0.02, S.SHOULDER.z - 0.05, 0.16), "3/4"),
-        ("ELBOW LOOPS", ["3 tight support loops,", "fold rolls above"],
+        ("ELBOW LOOPS", ["3 tight support loops,", "soft folds above"],
          (S.ELBOW.x, S.ELBOW.y, S.ELBOW.z + 0.05, 0.11), "LEFT SIDE"),
         ("HAND TOPOLOGY", ["fingers welded to palm,", "loop pairs per knuckle"],
          (S.WRIST.x + 0.01, -0.05, S.WRIST.z - 0.10, 0.10), "LEFT SIDE"),
-        ("NECK & COLLAR FLOW", ["gaiter rolls inside an open", "flared collar"],
+        ("NECK & COLLAR FLOW", ["smooth neck inside an open", "funnel collar, rolled rim"],
          (0.0, -0.02, 1.62, 0.13), "3/4"),
         ("HAT TOPOLOGY", ["32 around, concentric brim", "loops, creased crown"],
          (0.0, -0.02, 1.80, 0.15), "3/4"),
