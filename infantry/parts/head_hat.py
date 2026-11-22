@@ -77,10 +77,11 @@ Z_FACE0 = 1.655                    # lowest horizontal face loop; below it the r
 Z_NECK_TOP = 1.600                 # highest horizontal neck loop
 Z_NECK_END = 1.53                  # neck runs down to here inside the collar (coat neck hem meets it)
 TURTLE = 0.006                     # smooth turtleneck over the neck (round-3 review: no ribbing)
-TURTLE_FOLD = 0.0025               # amplitude of its two soft folds
+TURTLE_FOLD = 0.0015               # amplitude of its two soft folds
 NECK_FLARE = 0.012                 # bottom ring flares out to meet the coat's neck opening
 NECK_TOP_SHIFT = -0.011            # upper neck sits forward under the skull ...
-NECK_TOP_SLIM = (0.004, 0.007)     # ... and slimmer (x, y): slim neck, nape in line with the skull
+NECK_TOP_SLIM = (0.006, 0.008)     # ... and slimmer (x, y): slim neck, nape in line with the skull
+NECK_LEAN = 0.45                   # throat leans forward into the chin (no S-shaped hook)
 N_TRANS = 5                        # rows from the neck top loop to the first face loop
 
 # ------------------------------------------------------------------ mask (front_head / side_head)
@@ -173,10 +174,10 @@ def _add_ring(verts, pts):
 # HEAD_CENTER axis.  Rows below Z_FACE0 are guide keys only: the mask's lower point follows them
 # (gently receding chin), the mesh itself turns into the neck there.
 _HEAD_KEYS = [
-    (1.590, 0.0560, 0.0580, 0.0560),
-    (1.620, 0.0585, 0.0660, 0.0590),
-    (1.655, 0.0620, 0.0755, 0.0640),   # lowest face loop
-    (1.680, 0.0665, 0.0800, 0.0705),
+    (1.590, 0.0530, 0.0560, 0.0560),
+    (1.620, 0.0560, 0.0630, 0.0590),
+    (1.655, 0.0605, 0.0730, 0.0640),   # lowest face loop: jaw tapers toward the slim neck
+    (1.680, 0.0655, 0.0790, 0.0705),
     (1.705, 0.0690, 0.0825, 0.0765),   # compare row f=0.10
     (1.730, 0.0705, 0.0835, 0.0825),   # side_head: the skull bulges out behind just under the brim
     (1.760, 0.0715, 0.0830, 0.0845),   # brow, at the hat's sweatband
@@ -205,7 +206,7 @@ def _neck_ring(z, off, tilt=0.0, n=N_HEAD, wobble=0.0, seed=0.0):
     """Turtleneck loop: the spec's neck-top section (kept all the way down into the collar), moved a
     little forward and slimmed front-back toward the top so the nape lines up with the skull."""
     cy, rx, ry = spec.torso_section(spec.TORSO[-1][0])
-    k = _smooth(1.552, Z_NECK_TOP, z)
+    k = _smooth(1.536, 1.578, z)
     cy += NECK_TOP_SHIFT * k
     rx -= NECK_TOP_SLIM[0] * k
     ry -= NECK_TOP_SLIM[1] * k
@@ -243,8 +244,9 @@ def build_head():
             a = TAU * i / n
             p0, p1 = top[i], head_pt(a, Z_FACE0)
             d1 = (head_pt(a, Z_FACE0 + 0.004) - head_pt(a, Z_FACE0 - 0.004)).normalized()
-            L = (p1 - p0).length * 1.15
-            ring.append(_hermite(p0, V((0, 0, L)), p1, d1 * L, t))
+            L = (p1 - p0).length
+            lean = NECK_LEAN * max(-math.sin(a), 0.0) ** 2     # front of the neck leans forward
+            ring.append(_hermite(p0, V((0, -lean, 1)).normalized() * L, p1, d1 * L, t))
         rings.append(ring)
     # --- face / skull loops, ~1.3 cm apart up to the brow, then the cap ring inside the crown
     zb = 1.760
