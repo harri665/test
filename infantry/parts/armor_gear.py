@@ -71,7 +71,8 @@ BELT_N = 32
 TONGUE_T, TONGUE_W = 0.0045, 0.040
 KEEPER_T = 0.004
 BUCKLE_X = 0.018         # ref front: buckle frame spans x -0.015 .. +0.063 (offset to the wearer's left)
-BUCKLE_HW, BUCKLE_HH = 0.045, 0.039      # checklist: about 0.09 x 0.075 (ref 0.08 x 0.08)
+BUCKLE_HW, BUCKLE_HH = 0.045, 0.0355     # checklist: about 0.09 x 0.075 (ref 0.08 x 0.08); the lower
+                                         # bar clears the skirt's first button (top z 1.172)
 
 # positions along the belt given as front-view x (ref front_waist / back_waist), converted to angles
 X_KEEPERS_FRONT = ()                     # front: the canister's inner strap holds the tongue, the
@@ -79,7 +80,7 @@ X_KEEPERS_FRONT = ()                     # front: the canister's inner strap hol
 X_KEEPERS_BACK = (0.045,)                # both sides
 X_TONGUE_TIP = -0.090
 X_EYELETS = (-0.043, -0.060)             # punched holes in the tongue
-X_DRING_FRONT = 0.088
+X_DRING_FRONT = 0.082
 X_DRING_BACK = 0.080                     # straight bar of the back D-rings (ref back: D at ~0.11; kept
                                          # clear of the back pouch hangers)
 POUCH_FRONT = (0.152, 0.074, 0.136, 0.050)   # centre x, width, height, depth (ref x 0.11 .. 0.19, tall)
@@ -88,11 +89,11 @@ POUCH_BACK_CLR = 0.006                       # lying flat on the coat
 POUCH_BACK_DROP = 0.016                      # back pouches hang this much lower on their straps
 POUCH_CLR = 0.012
 # wide leather sleeve over the belt at the front sides: the final skirt's side-panel binding bulges
-# to +0.0439 between theta 41 and 61 deg at z 1.186 - 1.221 (above the +0.040 belt face); the
+# to +0.0472 between theta 39.5 and 63.3 deg at z 1.175 - 1.211 (above the +0.040 belt face); the
 # sleeve hides it.  Straps, hangers and D-rings crossing it ride on top (see _belt_top).
-SLEEVE_TH = RAD(50.8)
-SLEEVE_W = 0.057
-SLEEVE_IN = 0.0450
+SLEEVE_TH = RAD(52.0)
+SLEEVE_W = 0.068
+SLEEVE_IN = 0.0478
 
 # canister on the wearer's right front hip (ref front: axis x ~-0.15, z 0.89 .. 1.17)
 CAN_X = -0.150
@@ -562,20 +563,23 @@ def _belt_band():
     return lib.mesh_object("belt_band", *_torus(rings), topo="rigid", sharp_angle=35)
 
 
-def _strap_section(th, pts2d, w, T, P=None):
+def _strap_section(th, pts2d, w, T, P=None, nw=1):
     """4-vertex rings of a strap running through belt-section points pts2d = [(off, z, nx, nz)]
     (centre line + 2D outward normal), width w around the body at angle th.  The strap's edges
     follow the curve (angular offsets), so wide straps hug the belt instead of standing proud."""
     P = P or (lambda t, off, z: _belt_pt(t, off, z))
+    fr = [-1 + 2 * k / nw for k in range(nw + 1)]          # across the width, -1 .. +1
     rings = []
     for off, z, nx, nz in pts2d:
         oa, za = off - nx * T / 2, z - nz * T / 2
         ob, zb = off + nx * T / 2, z + nz * T / 2
+        seq = ([((oa, za), -1.0)] + [((ob, zb), f) for f in fr] + [((oa, za), 1.0)]
+               + [((oa, za), f) for f in reversed(fr[1:-1])])
         ring = []
-        for (o_, z_), sgn in (((oa, za), -1), ((ob, zb), -1), ((ob, zb), 1), ((oa, za), 1)):
+        for (o_, z_), f in seq:
             c = P(th, o_, z_)
             dth = (w / 2) / max(math.hypot(c.x, c.y), 0.05)
-            ring.append(P(th + sgn * dth, o_, z_))
+            ring.append(P(th + f * dth, o_, z_))
         rings.append(ring)
     return rings
 
@@ -595,7 +599,7 @@ def _belt_top(th, w=0.0):
     return top
 
 
-def _keeper(name, th, w=0.016, over=None, hang=0.0, wrap=True):
+def _keeper(name, th, w=0.016, over=None, hang=0.0, wrap=True, nw=1):
     """Leather keeper wrapped over the belt's top edge and down its face.  over = the outermost
     thing it has to clear (default: whatever _belt_top finds under it).  hang > 0: carries on down
     the skirt by `hang` (pouch / canister hanger) instead of tucking under the bottom rim;
@@ -610,19 +614,19 @@ def _keeper(name, th, w=0.016, over=None, hang=0.0, wrap=True):
     d = 0.7071
     pts = [(BELT_RI + 0.004, zt, 0, 1), (rf - 0.004, zt, 0, 1), (rf - 0.0012, zt - 0.0012, d, d),
            (rf, z1 - 0.004, 1, 0), (rf, BELT_ZM, 1, 0), (rf, z0 + 0.004, 1, 0)]
-    rings = _strap_section(th, pts, w, T)
+    rings = _strap_section(th, pts, w, T, nw=nw)
     if hang:
         def P(t, off, z):
             return _skirt_pt(t, off, z, 0.12)
-        rings += _strap_section(th, [(rf, z0 - 0.005, 1, 0)], w, T)    # straight past the belt's edge
+        rings += _strap_section(th, [(rf, z0 - 0.005, 1, 0)], w, T, nw=nw)    # straight past the belt's edge
         lo = [(0.004 + T / 2, z0 - hang * k, 1, 0) for k in (0.55, 1.0)]
-        rings += _strap_section(th, lo, w, T, P)
+        rings += _strap_section(th, lo, w, T, P, nw=nw)
     elif wrap:
         zb = z0 - g - T / 2
         rings += _strap_section(th, [(rf - 0.0012, zb + 0.0012, d, -d), (BELT_RO - 0.001, zb, 0, -1)],
-                                w, T)
+                                w, T, nw=nw)
     else:
-        rings += _strap_section(th, [(rf, z0 + 0.0005, 1, 0)], w, T)
+        rings += _strap_section(th, [(rf, z0 + 0.0005, 1, 0)], w, T, nw=nw)
     return lib.lofted(name, rings, cap_start=True, cap_end=True, topo="rigid", sharp_angle=35)
 
 
@@ -666,19 +670,19 @@ def _dring(name, th_bar, toward, depth=0.020, hh=0.015, tube=0.0027):
         rings.append([pts[i] + side * tube * math.cos(math.tau * j / 5) + nrm[i] * tube * math.sin(math.tau * j / 5)
                       for j in range(5)])
     ring = lib.mesh_object(name + "_ring", *_torus(rings), topo="rigid", sharp_angle=60)
-    holder = _keeper(name + "_keeper", th_bar, w=0.011, over=off + tube)
+    holder = _keeper(name + "_keeper", th_bar, w=0.011, over=off + tube, wrap=False)
     return [ring, holder]
 
 
 def _belt():
     parts = [_belt_band(), _tongue()]
     for s in (1, -1):
-        parts.append(_keeper("belt_sleeve", s * SLEEVE_TH, w=SLEEVE_W, over=SLEEVE_IN - 0.0008, wrap=False))
+        parts.append(_keeper("belt_sleeve", s * SLEEVE_TH, w=SLEEVE_W, over=SLEEVE_IN - 0.0012, wrap=False, nw=3))
     for x in X_KEEPERS_FRONT:
         parts.append(_keeper("keeper", _belt_th(x), wrap=False))
     for x in X_KEEPERS_BACK:
         for s in (1, -1):
-            parts.append(_keeper("keeper", _back(_belt_th(s * x))))
+            parts.append(_keeper("keeper", _back(_belt_th(s * x)), wrap=False))
     for i, x in enumerate(X_EYELETS):
         th = _belt_th(x)
         p, n, t = _ell(spec.torso_section(BELT_ZM), th, BELT_RO + TONGUE_T, BELT_ZM)
@@ -687,7 +691,7 @@ def _belt():
         th = _back(_belt_th(dx)) if dx else math.pi
         p, n, t = _ell(spec.torso_section(BELT_ZM), th, BELT_RO, BELT_ZM)
         parts.append(_grommet("eyelet", p, n, t) if dx else _rivet("belt_rivet", p, n, r=0.0055, h=0.0035, n=6))
-    parts += _dring("dring_f", _belt_th(X_DRING_FRONT), -1, depth=0.014)      # bulges towards the buckle
+    parts += _dring("dring_f", _belt_th(X_DRING_FRONT), -1, depth=0.009)      # bulges towards the buckle
     for s in (1, -1):
         parts += _dring("dring_b", _back(_belt_th(s * X_DRING_BACK)), s, depth=0.017)   # towards the spine
     return lib.join(parts, "belt", topo="rigid")
