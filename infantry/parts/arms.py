@@ -1,36 +1,68 @@
-"""Arms: coat sleeves (from the armhole seam), forearm bracers with studs, gloved hands.
+"""Arms (round 2): coat sleeves from the armhole seam, flared gauntlet bracers, gloved hands.
 
 Everything is built for the LEFT (+X) arm and mirrored with lib.mirror_copy.
 
 Objects per arm
-    Sleeve_upper_L   main     armhole seam ring -> just above the elbow (16 around)
+    Sleeve_upper_L   main     armhole seam ring -> elbow, with 3 soft fold rolls (16 around)
+    Sleeve_seam_L    main     lengthwise sleeve seam (piping) on the outer-front of the sleeve
     Sleeve_elbow_L   support  3 tight loops at the elbow
-    Sleeve_lower_L   main     elbow -> wrist, ends in a rolled, thick cuff
-    Bracer_L         rigid    conical forearm cuff with thickness + raised rims
-    Bracer_straps_L  rigid    2 strap bands + buckles
-    Bracer_studs_L   rigid    two rows of rivets round the cuff
-    Glove_cuff_L     main     thick flared glove cuff running up inside the sleeve cuff
+    Sleeve_lower_L   main     elbow -> a little way inside the bracer (rest is hidden)
+    Bracer_L         rigid    conical gauntlet cuff, thick rolled rims at both ends
+    Bracer_strap_L   rigid    one mid strap + buckle
+    Bracer_rivets_L  rigid    three large dome rivets in a row on the outer face
+    Glove_cuff_L     main     short flared glove cuff coming out of the bracer
     Wrist_L          support  3 tight loops at the wrist
     Hand_L           main     palm + 4 fingers + thumb, one welded all-quad mesh
-    Hand_armor_L     rigid    knuckle studs + back-of-hand plate
+    Hand_armor_L     rigid    knuckle band + rivets, back-of-hand plate, segmented finger-back plates
+
+Sleeve "phi" angle around the arm: 0 = outer side (+X), 90 deg = front (-Y), 270 deg = back.
 """
 import bisect
 import math
 
 import bpy  # noqa: F401
-from mathutils import Vector as V
+from mathutils import Quaternion, Vector as V
 
 from infantry import lib, spec
 
 S = spec
 CL = S.CLOTH
 TAU = math.tau
-NS = 16                                   # sleeve verts around
-NB = 32                                   # bracer verts around
+NS = 16                                   # sleeve verts around (PLAN: sleeve/arm 16)
+NB = 24                                   # bracer verts around
 D1 = (S.ELBOW - S.SHOULDER).normalized()
 D2 = (S.WRIST - S.ELBOW).normalized()
 LU = (S.ELBOW - S.SHOULDER).length        # upper arm length
 LF = (S.WRIST - S.ELBOW).length           # forearm length
+
+# ---------------------------------------------------------------- read from the reference
+# FRONT/BACK (docs/ref/front_arm_*.png): the sleeve hangs ~1.5-2 cm inside the straight
+# SHOULDER -> ELBOW line at mid upper arm (sleeve spans x 0.18-0.30 at z 1.31) and tucks under the
+# shoulder armour; it widens into stacked fold rolls just above the elbow (outer x 0.33-0.35).
+UPPER_BOW = 0.017          # max inward bow of the upper-arm centre line (zero at shoulder + elbow)
+UPPER_FLAT = 0.90          # lateral (front-view) radius factor of the upper sleeve
+# callout_elbow.png: 3 soft rolls stacked above the elbow, creases sag toward the elbow pit.
+ROLL_CRESTS = (-0.098, -0.068, -0.038)    # crest positions, metres along the arm from the elbow
+ROLL_AMP = (0.0062, 0.0076, 0.0082)       # roll height (radial)
+ROLL_SAG = 0.008                          # front of each roll sits this much lower than the back
+ROLL_SHAPE = ((0.0, 1.0), (0.008, 0.62), (0.0155, -0.28), (0.0225, 0.30))   # (offset from crest, height)
+ELBOW_POINT = 0.0028                      # bony elbow bulge at the back
+SEAM_PHI_INDEX = 2                        # lengthwise seam runs along sleeve vertex 2 (45 deg, outer-front)
+# DETAIL_PASS checklist + front_arm_*/side_arm: big flared gauntlet cuff, rolled rims, 1 strap, 3 rivets
+BRACER_R = (0.075, 0.055)                 # outer radius at the elbow end / wrist end
+BRACER_TH = 0.005                         # shell thickness
+BRACER_TOP_DROP = 0.015                   # FRONT: the top edge runs ~level, so its outer side starts lower
+RIM_TOP = (0.017, 0.0075)                 # rolled rim (width along the arm, bulge above the shell)
+RIM_BOT = (0.015, 0.0065)
+STRAP_W, STRAP_H = 0.020, 0.0035          # mid strap width / height above the shell
+RIVET_R, RIVET_H = 0.014, 0.0075          # three big dome rivets
+RIVET_PHI = 20.0                          # on the outer face, turned a little toward the front
+RIVET_X = (0.24, 0.50, 0.76)              # along the bracer (0 elbow end, 1 wrist end)
+BUCKLE_PHI = 105.0                        # strap buckle sits on the front
+HAND_SCALE = 1.15                         # checklist: larger, chunkier glove than round 1
+HAND_TURN = 25.0                          # front_arm_*: back of the hand turned toward the front (deg)
+HAND_ALIGN = 0.7                          # how far the curled middle tip is swung onto WRIST->HAND_TIP
+HAND_RISE = 0.012                         # glove emerges right under the bracer rim, tips end at z ~0.785
 
 
 # ------------------------------------------------------------------ small helpers
@@ -81,37 +113,47 @@ def frame_loop(c, ax, ay, az, ha, hb, bar, h0, h1):
 
 
 # ------------------------------------------------------------------ arm centre line
+def bow(s):
+    """Inward bow of the upper-arm centre line: 0 at the shoulder and at the elbow, small under the
+    shoulder armour, largest at about two thirds of the upper arm (where the reference sleeve is)."""
+    return UPPER_BOW * keyf(min(max(s / LU, 0.0), 1.0), [(0.0, 0.0), (0.42, 0.30), (0.70, 1.0), (1.0, 0.0)])
+
+
+_OUT = (V((1.0, 0.0, 0.0)) - D1 * D1.x).normalized()     # lateral direction across the upper arm
+
+
 class ArmPath:
-    """Arm centre line with a rounded elbow, addressed by arc length s (s=0 at SHOULDER)."""
-    STEP = 0.001
+    """Arm centre line (bowed upper arm, rounded elbow, straight forearm), addressed by the nominal
+    parameter s: 0 at SHOULDER, LU at ELBOW, LU + LF at WRIST (distance along the spec bones)."""
+    STEP = 0.002
 
     def __init__(self, rnd=0.028, s_min=-0.10, extra=0.06):
-        a = S.ELBOW - D1 * rnd
-        b = S.ELBOW + D2 * rnd
-        start = S.SHOULDER + D1 * s_min
-        end = S.WRIST + D2 * extra
-        pts = []
+        def up(s):
+            return S.SHOULDER + D1 * s - _OUT * bow(s)
+        pts, ss = [], []
         n1 = int(round((LU - rnd - s_min) / self.STEP))
-        pts += [start.lerp(a, i / n1) for i in range(n1)]
+        for i in range(n1):
+            s = s_min + (LU - rnd - s_min) * i / n1
+            pts.append(up(s))
+            ss.append(s)
+        a, b = up(LU - rnd), S.ELBOW + D2 * rnd
         nb = int(round(2 * rnd / self.STEP))
         for i in range(nb):
             f = i / nb
             pts.append(a * (1 - f) ** 2 + S.ELBOW * (2 * f * (1 - f)) + b * (f * f))
+            ss.append(LU - rnd + 2 * rnd * f)
         n2 = int(round((LF - rnd + extra) / self.STEP))
-        pts += [b.lerp(end, i / n2) for i in range(n2 + 1)]
-        self.pts = pts
-        acc = [s_min]
-        for i in range(1, len(pts)):
-            acc.append(acc[-1] + (pts[i] - pts[i - 1]).length)
-        # (the rounded corner shortens the path by ~0.1 mm only, so s = LU + LF is the wrist)
-        self.acc = acc
+        for i in range(n2 + 1):
+            f = i / n2
+            pts.append(b.lerp(S.WRIST + D2 * extra, f))
+            ss.append(LU + rnd + (LF - rnd + extra) * f)
+        self.pts, self.ss = pts, ss
         self.frames = lib.frames_along(pts, x_hint=(1, 0, 0))   # (tangent, outer, front)
 
     def at(self, s):
-        acc = self.acc
-        i = min(max(bisect.bisect_right(acc, s) - 1, 0), len(acc) - 2)
-        f = (s - acc[i]) / max(acc[i + 1] - acc[i], 1e-9)
-        f = min(max(f, 0.0), 1.0)
+        ss = self.ss
+        i = min(max(bisect.bisect_right(ss, s) - 1, 0), len(ss) - 2)
+        f = min(max((s - ss[i]) / max(ss[i + 1] - ss[i], 1e-9), 0.0), 1.0)
         c = self.pts[i].lerp(self.pts[i + 1], f)
         t0, x0, y0 = self.frames[i]
         t1, x1, y1 = self.frames[i + 1]
@@ -119,13 +161,11 @@ class ArmPath:
 
 
 def t_of(s):
-    """arc length -> spec arm parameter (0 shoulder, 1 elbow, 2 wrist)."""
+    """nominal s -> spec arm parameter (0 shoulder, 1 elbow, 2 wrist)."""
     return s / LU if s < LU else 1.0 + (s - LU) / LF
 
 
-BAG = [(0.0, 0.004), (0.60, 0.004), (0.80, 0.007), (1.0, 0.009), (1.12, 0.006), (1.5, 0.003), (1.9, 0.0)]
-FOLD = [(-0.108, 0.0), (-0.084, -0.003), (-0.060, 0.006), (-0.036, -0.006), (-0.012, 0.006), (0.0, 0.007),
-        (0.012, 0.004), (0.034, 0.0)]
+BAG = [(0.0, 0.000), (0.55, 0.001), (0.85, 0.0025), (1.0, 0.003), (1.15, 0.002), (1.5, 0.0)]
 
 
 def sleeve_R(s):
@@ -134,18 +174,15 @@ def sleeve_R(s):
     return S.arm_radius(t) + CL["sleeve_offset"] + keyf(t, BAG)
 
 
-def fold(ds, phi):
-    """Extra radius for the cloth rolls around the elbow.  ds = s - LU, phi: 0 outer, 90deg front."""
-    v = keyf(ds, FOLD)
-    if v < 0:                                   # creases bite deeper in the elbow pit (front)
-        v *= 1.0 + 0.7 * math.sin(phi)
-    v += 0.004 * max(0.0, -math.sin(phi)) * math.exp(-(ds / 0.022) ** 2)   # elbow point (back)
-    return v
+def sleeve_k(s):
+    """(lateral, front-back) radius factors: the upper sleeve is a little flatter seen from the front."""
+    kx = keyf(t_of(s), [(0.0, UPPER_FLAT), (0.55, UPPER_FLAT), (0.95, 1.0)])
+    return kx, 1.0 + (1.0 - kx) * 0.6
 
 
 def clamp_to_coat(p, weight=1.0, gap=0.004):
-    """Keep the sleeve from sinking into the coat torso under the armpit."""
-    if not (0.87 < p.z < 1.50):
+    """Keep the sleeve from sinking into the coat torso under the armpit (soft clamp)."""
+    if not (0.90 < p.z < 1.56):
         return p
     cy, rx, ry = S.torso_section(p.z)
     rx += CL["coat_offset"] + gap
@@ -154,7 +191,7 @@ def clamp_to_coat(p, weight=1.0, gap=0.004):
     if abs(dy) >= 1.0:
         return p
     xlim = rx * math.sqrt(1.0 - dy * dy)
-    m = 0.012                                   # soft clamp: no hard crease where the push starts
+    m = 0.012
     if p.x < xlim + m:
         x_new = xlim + m * math.exp((p.x - xlim) / m - 1.0)
         p = V((p.x + (x_new - p.x) * weight, p.y, p.z))
@@ -163,13 +200,27 @@ def clamp_to_coat(p, weight=1.0, gap=0.004):
 
 # ------------------------------------------------------------------ sleeve
 def build_sleeve(path):
-    def ring(s, extra=0.0, folds=True):
-        c, t, e1, e2 = path.at(s)
+    seam_pts, seam_nrm = [], []
+
+    def ring(s, disp=0.0, tiltw=0.0, seam=True):
+        """One 16-vert ring.  disp: radial fold displacement, tiltw: how much the loop follows the roll sag."""
         out = []
         for i in range(NS):
             phi = TAU * i / NS
-            r = sleeve_R(s) + extra + (fold(s - LU, phi) if folds else 0.0)
-            out.append(clamp_to_coat(c + (e1 * math.cos(phi) + e2 * math.sin(phi)) * r))
+            sp = math.sin(phi)
+            si = s + ROLL_SAG * tiltw * sp
+            c, t, e1, e2 = path.at(si)
+            kx, ky = sleeve_k(si)
+            R = sleeve_R(si)
+            d = disp * (0.65 + 0.35 * max(0.0, sp) + 0.20 * max(0.0, -math.cos(phi)))   # bunches in the elbow pit
+            if d < 0:
+                d *= 1.0 + 0.35 * max(0.0, sp)                       # creases bite deeper in the elbow pit
+            d += ELBOW_POINT * max(0.0, -sp) * math.exp(-((si - LU) / 0.020) ** 2)
+            p = c + e1 * (math.cos(phi) * (R * kx + d)) + e2 * (sp * (R * ky + d))
+            out.append(clamp_to_coat(p))
+            if seam and i == SEAM_PHI_INDEX:
+                seam_pts.append(out[-1])
+                seam_nrm.append((p - c).normalized())
         return out
 
     # --- armhole seam ring in cylinder coordinates around the upper arm axis
@@ -184,8 +235,9 @@ def build_sleeve(path):
         tgt = TAU * i / NS
         cyl.append((a, r.length, tgt + ((phi - tgt + math.pi) % TAU - math.pi)))
 
-    KB = 8
-    a_end = LU - 0.084
+    # --- blend from the tilted seam ring into rings perpendicular to the arm
+    KB = 9
+    a_end = LU + ROLL_CRESTS[0] - 0.014
     upper = [[p.copy() for p in seam]]
     for k in range(1, KB + 1):
         x = k / KB
@@ -194,90 +246,118 @@ def build_sleeve(path):
         for i in range(NS):
             a0, rho0, phi0 = cyl[i]
             phi_t = TAU * i / NS
-            # the top of the sleeve head leaves the seam slowly along the arm, the armpit evenly
             a = a0 + (a_end - a0) * x ** (1.0 + 0.15 * (1.0 + math.cos(phi_t)))
-            R = sleeve_R(max(a, 0.0)) + fold(a - LU, phi_t)
-            rho = rho0 + (R - rho0) * wr
-            phi = phi0 + (phi_t - phi0) * wr
+            kx, ky = sleeve_k(a)
+            R = sleeve_R(max(a, 0.0))
+            rho_t = R * math.hypot(kx * math.cos(phi_t), ky * math.sin(phi_t))
+            phi_e = math.atan2(ky * math.sin(phi_t), kx * math.cos(phi_t))
+            phi_e = phi_t + ((phi_e - phi_t + math.pi) % TAU - math.pi)
+            rho = rho0 + (rho_t - rho0) * wr
+            phi = phi0 + (phi_e - phi0) * wr
             c, t, f1, f2 = path.at(a)
             p = c + (f1 * math.cos(phi) + f2 * math.sin(phi)) * rho
             rg.append(clamp_to_coat(p, weight=min(1.0, k / 2.0)))
+            if k >= 2 and i == SEAM_PHI_INDEX:
+                seam_pts.append(rg[-1])
+                seam_nrm.append((p - c).normalized())
         upper.append(rg)
-    upper += [ring(LU - 0.060), ring(LU - 0.036), ring(LU - 0.012)]
 
-    elbow = [ring(LU + ds) for ds in (-0.012, -0.006, 0.0, 0.006, 0.012)]
+    # --- soft fold rolls: crest, lower flank, crease, rise into the next roll
+    for c, amp in zip(ROLL_CRESTS, ROLL_AMP):
+        upper += [ring(LU + c + dc, f * amp, 1.0) for dc, f in ROLL_SHAPE]
 
-    s_c0 = LU + LF - 0.018                      # cuff roll starts right below the bracer
-    n_low = 10
-    lower = [ring(LU + 0.012 + (s_c0 - LU - 0.012) * i / n_low) for i in range(n_low + 1)]
-    for ds, off in ((0.0010, 0.0030), (0.0025, 0.0052), (0.0050, 0.0062), (0.0075, 0.0052), (0.0092, 0.0030),
-                    (0.0100, 0.0005), (0.0100, -0.0040), (0.0040, -0.0050), (-0.0060, -0.0050)):
-        lower.append(ring(s_c0 + ds, off, folds=False))
+    # --- elbow support band (shares its boundary rings with the neighbours)
+    elbow = [upper[-1]]
+    for ds, disp, tw in ((-0.0075, 0.0022, 0.8), (0.0, 0.0032, 0.6), (0.0075, 0.0016, 0.4)):
+        elbow.append(ring(LU + ds, disp, tw))
+    elbow.append(ring(LU + 0.014, -0.001, 0.2))
 
-    return [lib.lofted("Sleeve_upper_L", upper, topo="main", sharp_angle=70),
-            lib.lofted("Sleeve_elbow_L", elbow, topo="support", sharp_angle=70),
-            lib.lofted("Sleeve_lower_L", lower, topo="main", sharp_angle=70)]
+    # --- lower sleeve: just far enough into the bracer to hide its end
+    lower = [elbow[-1]] + [ring(LU + ds, 0.0, 0.0, seam=False) for ds in (0.028, 0.042, 0.056)]
+
+    seam_obj = lib.strip_along("Sleeve_seam_L", seam_pts, seam_nrm, width=0.0065, thickness=0.0020,
+                               sink=0.0008, profile="round", topo="main")
+    return [lib.lofted("Sleeve_upper_L", upper, topo="main", sharp_angle=180), seam_obj,
+            lib.lofted("Sleeve_elbow_L", elbow, topo="support", sharp_angle=180),
+            lib.lofted("Sleeve_lower_L", lower, topo="main", sharp_angle=180)]
 
 
 # ------------------------------------------------------------------ bracer
-def build_bracer(path):
-    t0, t1 = CL["bracer"]
-    s0, s1 = LU + t0 * LF, LU + t1 * LF
-    Lb = s1 - s0
+BT0, BT1 = CL["bracer"]
+LB = (BT1 - BT0) * LF                                       # bracer length along the forearm
+E1F = (V((1.0, 0.0, 0.0)) - D2 * D2.x).normalized()         # outer
+E2F = D2.cross(E1F).normalized()                            # front
 
-    def Rb(x):                                   # outer body radius, x = distance from the top edge
-        x = min(max(x, 0.0), Lb)
-        return sleeve_R(s0 + x) + 0.010 + 0.010 * max(0.0, 1.0 - x / (0.55 * Lb)) ** 2
 
-    def ring(x, off, n=NB):
-        c, t, e1, e2 = path.at(s0 + x)
-        r = Rb(x) + off
-        return [c + (e1 * math.cos(TAU * j / n) + e2 * math.sin(TAU * j / n)) * r for j in range(n)]
+def bracer_R(x):
+    """Outer shell radius, x = distance from the elbow-end edge along the forearm."""
+    return BRACER_R[0] + (BRACER_R[1] - BRACER_R[0]) * min(max(x / LB, 0.0), 1.0)
 
-    def surf(x, phi_deg, off=0.0):
-        """Point on the (conical) outer surface + true surface normal + direction along the surface."""
-        c, t, e1, e2 = path.at(s0 + x)
-        rad = e1 * math.cos(math.radians(phi_deg)) + e2 * math.sin(math.radians(phi_deg))
-        slope = (Rb(x + 0.002) - Rb(x - 0.002)) / 0.004
-        return c + rad * (Rb(x) + off), (rad - t * slope).normalized(), (t + rad * slope).normalized()
 
-    TH, bv = 0.005, 0.0018
-    h, wr = 0.007, 0.020                          # top rim: height, width
-    h2, wr2 = 0.005, 0.016                        # bottom rim
-    prof = [(0.0, -TH), (0.0, h - bv), (bv, h), (wr - bv, h), (wr, h - bv), (wr + 0.0008, 0.0)]
-    nb = max(2, round((Lb - wr - wr2) / 0.022))
-    prof += [(wr + (Lb - wr - wr2) * i / nb, 0.0) for i in range(1, nb)]
-    prof += [(Lb - wr2 - 0.0008, 0.0), (Lb - wr2, h2 - bv), (Lb - wr2 + bv, h2), (Lb - bv, h2), (Lb, h2 - bv), (Lb, -TH)]
-    prof += [(Lb * 0.75, -TH), (Lb * 0.5, -TH), (Lb * 0.25, -TH)]
-    shell = lib.mesh_object("Bracer_L", *loop_loft([ring(x, o) for x, o in prof]), topo="rigid", sharp_angle=35)
+def bracer_shear(x, phi_deg):
+    """Along-arm shift of the upper bracer: the outer side (phi 0) starts lower than the inner side."""
+    return BRACER_TOP_DROP * 0.5 * (1.0 + math.cos(math.radians(phi_deg))) * max(0.0, 1.0 - x / (0.55 * LB))
 
-    # --- straps + buckles
+
+def bracer_pt(x, phi_deg, off=0.0):
+    """Point on the shell (+off radially), cone normal, direction down the surface."""
+    x = x + bracer_shear(x, phi_deg)
+    c = S.ELBOW + D2 * (BT0 * LF + x)
+    ph = math.radians(phi_deg)
+    rad = E1F * math.cos(ph) + E2F * math.sin(ph)
+    slope = (BRACER_R[1] - BRACER_R[0]) / LB
+    return c + rad * (bracer_R(x) + off), (rad - D2 * slope).normalized(), (D2 + rad * slope).normalized()
+
+
+def build_bracer():
+    def ring(x, off):
+        return [bracer_pt(x, 360.0 * j / NB, off)[0] for j in range(NB)]
+
+    def arc(xc, w, h, a0, a1, n):
+        """Rolled-rim profile points: elliptic arc centred at xc, spanning -TH .. h radially."""
+        cy, ay = (h - BRACER_TH) / 2, (h + BRACER_TH) / 2
+        return [(xc + w / 2 * math.cos(math.radians(a)), cy + ay * math.sin(math.radians(a)))
+                for a in (a0 + (a1 - a0) * i / n for i in range(n + 1))]
+
+    wt, ht = RIM_TOP
+    wb, hb = RIM_BOT
+    prof = arc(wt / 2, wt, ht, 270, 0, 6)                     # inner wall -> over the top lip -> outside
+    body0, body1 = wt + 0.0015, LB - wb - 0.0015
+    nb = max(2, round((body1 - body0) / 0.021))
+    prof += [(body0 + (body1 - body0) * i / nb, 0.0) for i in range(nb + 1)]
+    prof += arc(LB - wb / 2, wb, hb, 180, -90, 6)             # outside -> over the bottom lip -> inner wall
+    prof += [(LB * 0.62, -BRACER_TH), (LB * 0.30, -BRACER_TH)]
+    shell = lib.mesh_object("Bracer_L", *loop_loft([ring(x, o) for x, o in prof]), topo="rigid", sharp_angle=38)
+
+    # --- one mid strap (rounded band) + buckle on the front
     parts = []
-    sw = 0.020
-    for fx in (0.40, 0.64):
-        x = fx * Lb
-        sp = [(x - sw / 2, -0.0008), (x - sw / 2, 0.0032), (x - sw / 2 + 0.0012, 0.0044),
-              (x + sw / 2 - 0.0012, 0.0044), (x + sw / 2, 0.0032), (x + sw / 2, -0.0008)]
-        parts.append(loop_loft([ring(xx, o) for xx, o in sp]))
-        p, nrm, t = surf(x, 112.0)
-        tg = t.cross(nrm).normalized()
-        parts.append(frame_loop(p, t, tg, nrm, 0.0150, 0.0120, 0.0036, 0.003, 0.0080))
-        parts.append(obox(p + nrm * 0.0068, t, tg, nrm, 0.0150, 0.0016, 0.0016))
-    straps = lib.mesh_object("Bracer_straps_L", *combine(parts), topo="rigid", sharp_angle=35)
+    xs = RIVET_X[1] * LB
+    sw, sh = STRAP_W, STRAP_H
+    sp = [(xs - sw / 2, -0.0010), (xs - sw / 2, sh * 0.75), (xs - sw / 2 + 0.0015, sh),
+          (xs + sw / 2 - 0.0015, sh), (xs + sw / 2, sh * 0.75), (xs + sw / 2, -0.0010)]
+    parts.append(loop_loft([ring(x, o) for x, o in sp]))
+    p, nrm, dn = bracer_pt(xs, BUCKLE_PHI, sh - 0.0005)
+    tg = dn.cross(nrm).normalized()
+    parts.append(frame_loop(p, dn, tg, nrm, 0.0145, 0.0125, 0.0035, -0.0005, 0.0040))   # buckle frame
+    parts.append(obox(p + nrm * 0.0032 + tg * 0.0020, dn, tg, nrm, 0.0135, 0.0013, 0.0013))  # prong bar
+    q, nrm2, _ = bracer_pt(xs, BUCKLE_PHI + 24.0, sh - 0.0005)                          # free tongue end
+    tg2 = dn.cross(nrm2).normalized()
+    parts.append(obox(q + nrm2 * 0.0012, dn, tg2, nrm2, sw / 2 - 0.0015, 0.0075, 0.0012))
+    strap = lib.mesh_object("Bracer_strap_L", *combine(parts), topo="rigid", sharp_angle=38)
 
-    # --- rivets: two rows right round the cuff (45 deg apart, one dead centre on the outer side)
-    studs = []
-    for fx, rad in ((0.235, 0.0125), (0.83, 0.0105)):
-        for k, ang in enumerate(45.0 * i for i in range(8)):
-            p, nrm, t = surf(fx * Lb, ang, -0.0008)
-            studs.append(lib.stud(f"bracer_stud_{fx}_{k}", radius=rad, height=rad * 0.5, n=12, loc=p, normal=nrm))
-    studs = lib.join(studs, "Bracer_studs_L", topo="rigid")
-    return [shell, straps, studs]
+    # --- three big dome rivets in a row on the outer face (the middle one pins the strap)
+    rivets = []
+    for k, fx in enumerate(RIVET_X):
+        lift = (sh - 0.0006) if k == 1 else -0.0006
+        p, nrm, _ = bracer_pt(fx * LB, RIVET_PHI, lift)
+        rivets.append(lib.rivet(f"bracer_rivet_{k}", radius=RIVET_R, height=RIVET_H, n=12, loc=p, normal=nrm))
+    rivets = lib.join(rivets, "Bracer_rivets_L", topo="rigid")
+    return [shell, strap, rivets]
 
 
 # ------------------------------------------------------------------ hand
-# Hand-local coordinates: x = u across the palm (+ towards the thumb / front of the character),
-# y = v thickness (+ back of the hand, - palm), z = s along the hand (wrist -> finger tips).
+# Hand-local coordinates (before HAND_SCALE): x = u across the palm (+ towards the thumb / front of
+# the character), y = v thickness (+ back of the hand, - palm), z = s along the hand (wrist -> tips).
 FINGER_W = [0.0220, 0.0230, 0.0215, 0.0200]          # index, middle, ring, pinky
 PALM_HW = sum(FINGER_W) / 2
 _b = [PALM_HW]
@@ -299,9 +379,9 @@ WEB = [(-1.0, 0.082), (-0.76, 0.087), (-0.28, 0.096), (0.23, 0.100), (0.75, 0.09
 W_KEYS = [(0.0, 0.0360), (0.25, 0.0385), (0.6, 0.0415), (1.0, PALM_HW)]
 T_KEYS = [(0.0, 0.0285), (0.3, 0.0205), (0.7, 0.0155), (1.0, 0.0116)]
 P_KEYS = [(0.0, 2.3), (0.3, 3.0), (1.0, 3.6)]
-FINGER_LEN = [0.080, 0.088, 0.082, 0.064]
+FINGER_LEN = [0.078, 0.086, 0.080, 0.062]
 FINGER_FAN = [4.0, 1.0, -2.5, -6.5]                   # degrees, + towards the thumb
-FINGER_BEND = [(9, 20, 12), (12, 24, 13), (15, 27, 15), (18, 30, 16)]   # MCP, PIP, DIP curl (deg)
+FINGER_BEND = [(10, 21, 13), (12, 24, 14), (15, 27, 15), (18, 30, 16)]   # MCP, PIP, DIP curl (deg)
 FINGER_RV = [0.0101, 0.0103, 0.0100, 0.0091]
 
 
@@ -333,62 +413,84 @@ RING8 = [(0.76, 0.76), (0.0, 1.0), (-0.76, 0.76), (-1.0, 0.0), (-0.76, -0.76), (
 # order: TL, TM, TR, RM, BR, BM, BL, LM   (T = back of hand, L = thumb side)
 
 
-def digit(P0, dirs, Ls, fu_hint, fv_hint, ru, rv, sep=0.007, e=0.0032, taper=0.14):
-    """Rings (after the base ring) + tip point of a 3-segment digit.
-    dirs: direction of each segment; rings are 8 points in RING8 order."""
-    joints = [V(P0)]
-    for dd, L in zip(dirs, Ls):
-        joints.append(joints[-1] + dd * L)
-    cum = [0.0, Ls[0], Ls[0] + Ls[1], sum(Ls)]
-    Ltot = cum[3]
+class Digit:
+    """3-segment digit: rings (after the base ring) with loop pairs at each knuckle + a tip point."""
 
-    def frame(dd):
-        fv = (fv_hint - dd * fv_hint.dot(dd)).normalized()
+    def __init__(self, P0, dirs, Ls, fu_hint, fv_hint, ru, rv, sep=0.007, e=0.0032, taper=0.14):
+        self.dirs, self.Ls, self.fu_hint, self.fv_hint = dirs, Ls, fu_hint, fv_hint
+        self.ru, self.rv, self.e, self.sep, self.taper = ru, rv, e, sep, taper
+        self.joints = [V(P0)]
+        for dd, L in zip(dirs, Ls):
+            self.joints.append(self.joints[-1] + dd * L)
+        self.cum = [0.0, Ls[0], Ls[0] + Ls[1], sum(Ls)]
+        L1, L2, L3 = Ls
+        Lt = self.cum[3]
+        st = [(sep, 1.0)]
+        span = L1 - e - sep
+        n = max(1, round(span / 0.010))
+        st += [(sep + span * i / n, 0.98) for i in range(1, n)]
+        st += [(L1 - e, 1.04), (L1 + e, 1.04)]
+        span = L2 - 2 * e
+        n = max(1, round(span / 0.010))
+        st += [(L1 + e + span * i / n, 0.97) for i in range(1, n)]
+        st += [(L1 + L2 - e, 1.03), (L1 + L2 + e, 1.03)]
+        xa, xb = L1 + L2 + e, Lt - 0.0100
+        n = max(1, round((xb - xa) / 0.008))
+        st += [(xa + (xb - xa) * i / n, 1.0) for i in range(1, n)]
+        st += [(xb, 0.99), (Lt - 0.0052, 0.90), (Lt - 0.0018, 0.60)]
+        self.rings = [self.ring_at(x, sc) for x, sc in st]
+        c, dd = self.at(Lt)
+        fu, fv = self.frame(dd)
+        self.tip = c - fv * (rv * 0.12)
+
+    def frame(self, dd):
+        fv = (self.fv_hint - dd * self.fv_hint.dot(dd)).normalized()
         fu = dd.cross(fv).normalized()
-        if fu.dot(fu_hint) < 0:
+        if fu.dot(self.fu_hint) < 0:
             fu = -fu
         return fu, fv
 
-    def at(x):
+    def at(self, x):
+        cum, dirs = self.cum, self.dirs
         k = 0 if x < cum[1] else (1 if x < cum[2] else 2)
-        c = joints[k] + dirs[k] * (x - cum[k])
+        c = self.joints[k] + dirs[k] * (x - cum[k])
         dd = dirs[k]
-        m = 1.7 * e
+        m = 1.7 * self.e
         for jn in (1, 2):
             if abs(x - cum[jn]) < m:
                 wgt = (x - cum[jn] + m) / (2 * m)
                 dd = dirs[jn - 1].lerp(dirs[jn], wgt).normalized()
         return c, dd
 
-    L1, L2, L3 = Ls
-    st = [(sep, 1.0)]
-    span = L1 - e - sep
-    n = max(1, round(span / 0.010))
-    st += [(sep + span * i / n, 0.98) for i in range(1, n)]
-    st += [(L1 - e, 1.04), (L1 + e, 1.04)]
-    span = L2 - 2 * e
-    n = max(1, round(span / 0.010))
-    st += [(L1 + e + span * i / n, 0.97) for i in range(1, n)]
-    st += [(L1 + L2 - e, 1.03), (L1 + L2 + e, 1.03)]
-    xa, xb = L1 + L2 + e, Ltot - 0.0100
-    n = max(1, round((xb - xa) / 0.008))
-    st += [(xa + (xb - xa) * i / n, 1.0) for i in range(1, n)]
-    st += [(xb, 0.99), (Ltot - 0.0052, 0.90), (Ltot - 0.0018, 0.60)]
+    def ring_at(self, x, sc=1.0):
+        c, dd = self.at(x)
+        fu, fv = self.frame(dd)
+        k = sc * (1.0 - self.taper * x / self.cum[3])
+        return [c + fu * (self.ru * k * cx) + fv * (self.rv * k * (cy if cy > 0 else cy * 0.92)) for cx, cy in RING8]
 
-    rings = []
-    for x, sc in st:
-        c, dd = at(x)
-        fu, fv = frame(dd)
-        k = sc * (1.0 - taper * x / Ltot)
-        rings.append([c + fu * (ru * k * cx) + fv * (rv * k * (cy if cy > 0 else cy * 0.92)) for cx, cy in RING8])
-    c, dd = at(Ltot)
-    fu, fv = frame(dd)
-    return rings, c - fv * (rv * 0.12)
+    def plate(self, seg, out=0.0013, sink=0.0006):
+        """Curved plate over the back of segment `seg` -> list of closed 14-point rings (local coords)."""
+        x0 = self.cum[seg] + (self.sep if seg == 0 else self.e) + 0.0018
+        x1 = self.cum[seg + 1] - self.e - 0.0012
+        rings = []
+        for x, sh in ((x0, 0.85), ((x0 + x1) / 2, 1.0), (x1, 0.85)):
+            c, dd = self.at(x)
+            fu, fv = self.frame(dd)
+            k = 0.975 * (1.0 - self.taper * x / self.cum[3])
+            o, i = [], []
+            for a in (22.0, 48.0, 74.0, 90.0, 106.0, 132.0, 158.0):
+                ar = math.radians(a)
+                box = 1.0 + 0.075 * math.sin(2 * ar) ** 2
+                p = c + fu * (self.ru * k * box * math.cos(ar)) + fv * (self.rv * k * box * math.sin(ar))
+                n = (fu * math.cos(ar) + fv * math.sin(ar)).normalized()
+                o.append(p + n * (out * sh))
+                i.append(p - n * sink)
+            rings.append(o + i[::-1])
+        return rings
 
 
 def build_hand():
     verts, faces = [], []
-    mid_tip = [None]
 
     def add(p):
         verts.append(V(p))
@@ -416,18 +518,17 @@ def build_hand():
             row.append(V((u, v, s)))
         grid.append(row)
 
-    # thenar mound (ball of the thumb)
+    # thenar mound (ball of the thumb) + the web between thumb and index finger
     bump_c, bump_d = V((0.030, -0.018, 0.034)), V((0.45, -0.89, 0.0)).normalized()
     for r in range(1, NR + 1):
         for j in range(NP):
             p = grid[r][j]
             p = p + bump_d * (0.005 * math.exp(-((p - bump_c).length / 0.022) ** 2))
-            # the web between thumb and index finger is drawn in a little
             grid[r][j] = p + V((-0.0045, 0.002, 0.0)) * math.exp(-((p - V((0.040, -0.006, 0.058))).length / 0.011) ** 2)
 
     # thumb root: a 2x2 patch on the palm-side thumb corner of the palm becomes the thumb's base ring
     R1 = 2
-    hole_cells = {(R1, 18), (R1, 19), (R1 + 1, 18), (R1 + 1, 19)}        # (row, col) of removed quads
+    hole_cells = {(R1, 18), (R1, 19), (R1 + 1, 18), (R1 + 1, 19)}
     hole_vert = (R1 + 1, 19)
     h = [(R1, 0), (R1, 19), (R1, 18), (R1 + 1, 18), (R1 + 2, 18), (R1 + 2, 19), (R1 + 2, 0), (R1 + 1, 0)]
     th_c = V((0.0365, -0.0125, 0.0360))
@@ -448,7 +549,7 @@ def build_hand():
     for r in range(NR + 1):
         for j in range(NP):
             if (r, j) == hole_vert:
-                continue                                            # vertex inside the thumb hole
+                continue
             idx[(r, j)] = add(grid[r][j])
     for r in range(NR):
         for j in range(NP):
@@ -457,19 +558,20 @@ def build_hand():
             j2 = (j + 1) % NP
             faces.append((idx[(r, j)], idx[(r, j2)], idx[(r + 1, j2)], idx[(r + 1, j)]))
 
-    def add_digit(base, rings, tip):
+    def add_digit(base, dg):
         prev = base
-        for rg in rings:
+        for rg in dg.rings:
             cur = [add(p) for p in rg]
             for k in range(8):
                 k2 = (k + 1) % 8
                 faces.append((prev[k], prev[k2], cur[k2], cur[k]))
             prev = cur
-        c = add(tip)
+        c = add(dg.tip)
         for k in (1, 3, 5, 7):
             faces.append((c, prev[k], prev[(k + 1) % 8], prev[(k + 2) % 8]))
 
     # ---------------- four fingers, welded to the last palm row
+    digits = []
     web = []
     for f in range(3):
         ub = U_BOUND[f + 1]
@@ -490,41 +592,45 @@ def build_hand():
             dirs.append(dd)
         L = FINGER_LEN[f]
         P0 = V((U_CENT[f], -0.0005, keyf(U_CENT[f] / PALM_HW, WEB)))
-        rings, tip = digit(P0, dirs, (0.36 * L, 0.34 * L, 0.30 * L), fu, fv,
-                           FINGER_W[f] / 2 - 0.0012, FINGER_RV[f])
-        add_digit(base, rings, tip)
-        if f == 1:
-            mid_tip[0] = tip
+        dg = Digit(P0, dirs, (0.36 * L, 0.34 * L, 0.30 * L), fu, fv, FINGER_W[f] / 2 - 0.0012, FINGER_RV[f])
+        add_digit(base, dg)
+        digits.append(dg)
 
     # ---------------- thumb
     d0 = (th_n0 * 0.8 + th_dir * 0.2).normalized()
     d2 = (th_dir + V((-0.24, -0.14, 0.06))).normalized()
-    rings, tip = digit(th_c, [d0, th_dir, d2], (0.020, 0.032, 0.029), uhint, vhint, 0.0118, 0.0110, sep=0.006)
-    add_digit([idx[c] for c in th_base_cells], rings, tip)
+    thumb = Digit(th_c, [d0, th_dir, d2], (0.020, 0.032, 0.029), uhint, vhint, 0.0118, 0.0110, sep=0.006)
+    add_digit([idx[c] for c in th_base_cells], thumb)
 
-    # ---------------- frames.  The hand is tipped back at the wrist so that the relaxed (curled)
-    # middle finger still ends close to the spec.WRIST -> spec.HAND_TIP line.
-    O = S.WRIST
+    # ---------------- frames.  Back of the hand faces out (+X) turned HAND_TURN toward the front,
+    # thumb to the front; then the whole hand is rotated about the wrist so that the relaxed (curled)
+    # middle fingertip swings (HAND_ALIGN of the way) onto the spec.WRIST -> spec.HAND_TIP line.
     d0_ = (S.HAND_TIP - S.WRIST).normalized()
-    b0_ = V((1.0, 0.0, 0.0))
-    b0_ = (b0_ - d0_ * b0_.dot(d0_)).normalized()    # back of the hand faces away from the thigh (+X)
-    w = d0_.cross(b0_).normalized()                  # thumb side = character's front (-Y)
-    al = 0.65 * math.atan2(-mid_tip[0].y, mid_tip[0].z)
-    d = d0_ * math.cos(al) + b0_ * math.sin(al)
-    b = b0_ * math.cos(al) - d0_ * math.sin(al)
+    O = S.WRIST - d0_ * HAND_RISE
+    b = V((1.0, 0.0, 0.0))
+    b = (b - d0_ * b.dot(d0_)).normalized()
+    w = d0_.cross(b).normalized()
+    d = d0_.copy()
+    tr = math.radians(HAND_TURN)
+    b, w = b * math.cos(tr) + w * math.sin(tr), w * math.cos(tr) - b * math.sin(tr)
+    mt = digits[1].tip
+    q = (w * mt.x + b * mt.y + d * mt.z).normalized().rotation_difference(d0_)
+    q = Quaternion().slerp(q, HAND_ALIGN)
+    w, b, d = q @ w, q @ b, q @ d
+    HS = HAND_SCALE
 
     def W(p):
-        return O + w * p.x + b * p.y + d * p.z
+        return O + (w * p.x + b * p.y + d * p.z) * HS
 
     def Wd(p):
-        return w * p.x + b * p.y + d * p.z
+        return (w * p.x + b * p.y + d * p.z).normalized()
 
-    bf = V((1.0, 0.0, 0.0))                          # forearm-aligned frame for the cuff
-    bf = (bf - D2 * bf.dot(D2)).normalized()
+    bf = (V((1.0, 0.0, 0.0)) - D2 * D2.x).normalized()   # forearm-aligned frame for the glove cuff
     wf = D2.cross(bf).normalized()
+    bf, wf = bf * math.cos(tr) + wf * math.sin(tr), wf * math.cos(tr) - bf * math.sin(tr)
 
     def Wf(p):
-        return O + wf * p.x + bf * p.y + D2 * p.z
+        return O + (wf * p.x + bf * p.y + D2 * p.z) * HS
 
     hand = lib.mesh_object("Hand_L", [W(p) for p in verts], faces, topo="main", sharp_angle=180)
 
@@ -535,35 +641,49 @@ def build_hand():
         wr_rings.append([Wf(p).lerp(W(p), hw) for p in section(s, Wd0 * k, Td0 * k, p0)])
     wrist = lib.lofted("Wrist_L", wr_rings, topo="support", sharp_angle=180)
 
-    # ---------------- glove cuff (thick, flares up inside the sleeve cuff)
+    # ---------------- short flared glove cuff: a rolled lip just above the wrist, flaring up into the bracer
     Wb, Tb = Wd0 * 0.96, Td0 * 0.96
-    prof = [(0.000, 0.0008), (0.000, 0.0050), (-0.004, 0.0065), (-0.008, 0.0075), (-0.010, 0.0060),
-            (-0.022, 0.0070), (-0.034, 0.0080), (-0.045, 0.0090), (-0.045, 0.0060), (-0.022, 0.0030)]
-    cuff = lib.mesh_object("Glove_cuff_L", *loop_loft([[Wf(p) for p in section(s, Wb + g, Tb + g * 1.5, 2.3)]
+    prof = [(0.0010, 0.0008), (0.0010, 0.0042), (-0.0015, 0.0056), (-0.0045, 0.0052), (-0.0080, 0.0050),
+            (-0.0160, 0.0062), (-0.0300, 0.0068), (-0.0300, 0.0038), (-0.0120, 0.0016)]
+    cuff = lib.mesh_object("Glove_cuff_L", *loop_loft([[Wf(p) for p in section(s, Wb + g, Tb + g * 1.4, 2.3)]
                                                         for s, g in prof]), topo="main", sharp_angle=60)
 
-    # ---------------- rigid bits: knuckle studs + back-of-hand plate
+    # ---------------- rigid bits: knuckle band + rivets, back-of-hand plate, finger-back plates
     armor = []
-    nrm = Wd(V((0.0, 1.0, 0.22)).normalized())
+    kr = [(grid[NR - 2][j] + grid[NR - 1][j]) * 0.5 for j in range(1, 10)]
+    kn = []
+    for i in range(len(kr)):
+        tg = kr[min(i + 1, 8)] - kr[max(i - 1, 0)]
+        n = tg.cross(V((0.0, 0.0, 1.0))).normalized()
+        kn.append(n if n.y > 0 else -n)
+    band = lib.strip_along("knuckle_band", [W(p) for p in kr], [Wd(n) for n in kn], width=0.013 * HS,
+                           thickness=0.0026, sink=0.0010, profile="flat", topo="rigid")
+    armor.append(band)
     for f in range(4):
-        p = (grid[NR - 2][2 + 2 * f] + grid[NR - 1][2 + 2 * f]) * 0.5 + V((0.0, -0.0010, 0.0))
-        armor.append(lib.stud(f"knuckle_{f}", radius=0.0078 if f < 3 else 0.0068, height=0.0048, n=8,
-                              loc=W(p), normal=nrm))
-    pc_u, pc_s, phu, phs = -0.001, 0.047, 0.0175, 0.0165
+        i = 1 + 2 * f
+        armor.append(lib.rivet(f"knuckle_rivet_{f}", radius=(0.0070 if f < 3 else 0.0062) * HS, height=0.0050,
+                               n=8, loc=W(kr[i]) + Wd(kn[i]) * 0.0016, normal=Wd(kn[i])))
+    pc_u, pc_s, phu, phs = -0.001, 0.045, 0.0175, 0.0155
     pr = []
-    for shrink, lift in ((0.0, -0.0015), (0.0, 0.0028), (0.0022, 0.0040)):
+    for shrink, lift in ((0.0, -0.0015), (0.0, 0.0026), (0.0022, 0.0036)):
         rg = []
         for k in range(12):
             a = TAU * k / 12
             cu = math.copysign(abs(math.cos(a)) ** 0.5, math.cos(a))
             cs = math.copysign(abs(math.sin(a)) ** 0.5, math.sin(a))
             u, s = pc_u + (phu - shrink) * cu, pc_s + (phs - shrink) * cs
-            rg.append(W(V((u, back_v(u, s) + lift, s))))
+            rg.append(W(V((u, back_v(u, s) + lift / HS, s))))
         pr.append(rg)
-    plate = lib.lofted("hand_plate", pr, cap_end=True, topo="rigid", sharp_angle=35)
-    armor.append(plate)
-    armor.append(lib.stud("hand_plate_stud", radius=0.0045, height=0.003, n=8,
-                          loc=W(V((pc_u, back_v(pc_u, pc_s) + 0.0036, pc_s))), normal=Wd(V((0.0, 1.0, 0.08)).normalized())))
+    armor.append(lib.lofted("hand_plate", pr, cap_end=True, topo="rigid", sharp_angle=35))
+    armor.append(lib.emblem_cross("hand_plate_star", size=0.0085, thickness=0.0018, long_tail=1.5,
+                                  loc=W(V((pc_u, back_v(pc_u, pc_s), pc_s))) + Wd(V((0.0, 1.0, 0.0))) * 0.0034,
+                                  normal=Wd(V((0.0, 1.0, 0.08))), up=-d))
+    plates = []
+    for dg in digits:
+        for seg in (0, 1):
+            plates.append(lib.loft([[W(p) for p in rg] for rg in dg.plate(seg)], cap_start=True, cap_end=True))
+    plates.append(lib.loft([[W(p) for p in rg] for rg in thumb.plate(1)], cap_start=True, cap_end=True))
+    armor.append(lib.mesh_object("finger_plates", *combine(plates), topo="rigid", sharp_angle=40))
     armor = lib.join(armor, "Hand_armor_L", topo="rigid")
     return [cuff, wrist, hand, armor]
 
@@ -571,6 +691,6 @@ def build_hand():
 # ------------------------------------------------------------------ entry point
 def build():
     path = ArmPath()
-    left = build_sleeve(path) + build_bracer(path) + build_hand()
+    left = build_sleeve(path) + build_bracer() + build_hand()
     right = [lib.mirror_copy(o) for o in left]
     return left + right
