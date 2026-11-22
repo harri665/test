@@ -832,9 +832,9 @@ def _front(S, lapel_top_z):
         t = min(max((z - LAPEL_BEND[1]) / (T.y - LAPEL_BEND[1]), 0.0), 1.0)
         return 0.018 + (0.011 - 0.018) * t
     objs.append(_panel("coat_lapel_L", S, Mp, lapel_off, 0.016))
-    # rolled edge on the free outline only (break -> bend -> peak -> notch -> collar); the roll line
-    # T -> V -> B is a soft fold, no tube (FBX)
-    objs.append(_roll("coat_lapel_L_trim", S, [B, Mb, P, K, T], lapel_off, closed=False))
+    # rolled edge on the free outline (break -> bend -> peak -> notch -> collar) and down the short
+    # top of the roll line to V (it covers the under lapel's roll end); the long fold V -> B has no tube (FBX)
+    objs.append(_roll("coat_lapel_L_trim", S, [B, Mb, P, K, T, Vv], lapel_off, closed=False))
 
     # ---- under lapel (wearer's right): visible part T2 -> notch -> P2 -> M2 -> X1, tucked under the big one
     def isect(a, b, c, d):
@@ -858,7 +858,7 @@ def _front(S, lapel_top_z):
     vis = [X1, M2, P2, K2, T2, Vv]                      # clockwise
     ccw = vis[::-1]
     roll_cs = _inset(ccw, LAPEL_ROLL_R * 0.75, closed=True)[::-1]
-    cs = [roll_cs[0] + (roll_cs[1] - roll_cs[0]).normalized() * 0.006] + roll_cs[1:5] + [roll_cs[4].lerp(roll_cs[5], 0.85)]
+    cs = [roll_cs[0] + (roll_cs[1] - roll_cs[0]).normalized() * 0.006] + roll_cs[1:5] + [roll_cs[4].lerp(roll_cs[5], 1.0)]
     pts = [S.point(x, z, off=r_off - LAPEL_ROLL_R * 0.35)[0] for x, z in _poly_step(cs, 0.014)]
     objs.append(lib.lofted("coat_lapel_R_trim", lib.tube_rings(pts, LAPEL_ROLL_R, n=8, x_hint=(0, -1, 0)),
                            cap_start=True, cap_end=True, topo="main"))
@@ -1008,7 +1008,7 @@ def _armhole_seams(S, index, verts):
 # ============================================================================ crumples (C4)
 CRUMPLES = [
     # (crest poly line in (s, z), amplitude, half width): tent profile -> flat facets meeting at crisp
-    # crests, like the FBX's low-poly crumples.  back: sag folds hanging between the seams above the belt
+    # crests (smooth shaded: hard-edged quads read as pixels on this grid).  back: sag folds hanging between the seams above the belt
     ([(-0.17, 1.302), (-0.08, 1.284), (-0.02, 1.296)], 0.0153, 0.031),
     ([(0.02, 1.294), (0.09, 1.280), (0.17, 1.300)], 0.0153, 0.031),
     ([(-0.12, 1.338), (0.0, 1.322), (0.12, 1.336)], -0.0102, 0.027),
@@ -1060,21 +1060,6 @@ def _crumple(verts, index):
     return moved
 
 
-def _sharpen(ob, ids, angle=9.0):
-    """Hard edges inside the crumple zone so the folds read as crisp facets (FBX), not soft bumps."""
-    import bmesh
-    me = ob.data
-    bm = bmesh.new()
-    bm.from_mesh(me)
-    lim = math.radians(angle)
-    for e in bm.edges:
-        if any(v.index in ids for v in e.verts) and len(e.link_faces) == 2 and e.calc_face_angle(0.0) > lim:
-            e.smooth = False
-    bm.to_mesh(me)
-    bm.free()
-    me.update()
-
-
 def _guide_surface(verts, faces):
     """Wrap guide: the core + a coat-offset tube below it down to GUIDE_Z (only the flap tongue uses it)."""
     vs, fs = list(verts), list(faces)
@@ -1098,9 +1083,8 @@ def _guide_surface(verts, faces):
 # ============================================================================ build
 def build():
     index, verts, faces = _solve_core(_yoke_pins())
-    moved = _crumple(verts, index)
+    _crumple(verts, index)
     core = lib.mesh_object("coat_torso", verts, faces, topo="main")
-    _sharpen(core, moved)
     worst = _check_armholes(core)
     print(f"torso_coat: armhole seams match spec.armhole_ring(16, +-1) (max deviation {worst:.1e} m)")
     S = _guide_surface(verts, faces)
