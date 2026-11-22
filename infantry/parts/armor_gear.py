@@ -30,7 +30,7 @@ DEG = math.degrees
 #  measurements were taken with a metric grid laid over the sheet at the compare.py scale)
 
 # shoulder plate (P1) lying on the shoulder slope, with a slightly larger under-plate (P2) below it
-PL_X0 = 0.122            # inner end, against the collar (ref front: 0.105 bottom .. 0.145 top)
+PL_X0 = 0.140            # inner end, against the collar (ref front: 0.145 at the top edge)
 PL_X1 = 0.258            # outer end of the top plate's crown (ref front: 0.258 at z 1.56)
 PL_STEP = 0.010          # the under-plate peeks out this far beyond the top plate (ref: double edge)
 PL_LEAN = 0.55           # ends slant inward going down (ref front: outer end 0.258@1.56 -> 0.205@1.495)
@@ -39,19 +39,20 @@ PL_D = (0.060, 0.095)    # front / back legs drop this far below the crown at in
 PL_YC = 0.008            # arch centre a little behind the shoulder line (ref side)
 PL_POW = 2.6             # arch section superellipse power
 PL_CLR = 0.008           # under-plate underside above the coat shoulder / armhole top
-PL_Z_IN = 1.603          # under-plate crown height at its inner end (coat yoke 1.593 there + clearance)
-PL_T2, PL_T1 = 0.005, 0.009              # under-plate / top plate thickness
-PL_TRIM = (0.013, 0.003)                 # top plate raised border frame: width, height
+PL_Z_IN = 1.5955         # under-plate crown height at its inner end (coat yoke ~1.591 there + 0.0045;
+                         # the ref plate tops out at 1.605, so the stack has to stay thin)
+PL_T2, PL_T1 = 0.0045, 0.0070            # under-plate / top plate thickness
+PL_TRIM = (0.012, 0.0025)                # top plate raised border frame: width, height
 
 # curved upper-arm guard (P3)
 GD_CLR = 0.010           # inner surface outside the sleeve contract (arm radius + 0.022)
 GD_SLEEVE = 0.022        # DETAIL_PASS: upper sleeve radius <= arm radius + 0.022
-GD_T = 0.0055
-GD_TRIM = (0.012, 0.0025)
+GD_T = 0.0050
+GD_TRIM = (0.012, 0.0022)
 GD_PHI = (RAD(-96), RAD(104))   # front edge .. back edge, 0 = straight out from the arm (ref side:
                                 # the guard sits a little behind the arm centre)
-GD_POW = 2.2
-GD_TOP_Z = (1.524, 1.505)  # top edge of the guard: at its outer face / at its front and back legs
+GD_POW = 2.0
+GD_TOP_Z = (1.5115, 1.500)  # top edge of the guard: at its outer face / at its front and back legs
                            # (tucks under the plates; ref 1.50-1.535)
 GD_GAP = 0.004           # air between guard top and the under-plate's underside
 
